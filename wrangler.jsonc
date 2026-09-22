@@ -3,9 +3,12 @@
   "name": "expert-dock",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
+  "routes": [
+    { "pattern": "ed.lorne.top", "custom_domain": true }
+  ],
   "vars": {
     "MAX_UPLOAD_BYTES": "20971520",
-    "HELPER_VERSION": "0.2.2"
+    "HELPER_VERSION": "0.2.3"
   },
   "d1_databases": [
     {

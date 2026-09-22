@@ -27,7 +27,7 @@ npm run db:local
 npm run dev
 ```
 
-打开 <http://localhost:8787>。测试：
+打开 <http://localhost:8787>。正式服务地址：<https://ed.lorne.top>。测试：
 
 ```bash
 npm test
@@ -61,7 +61,7 @@ npm run deploy
 `SESSION_SECRET` 使用至少 32 字节随机值。部署后在 GitHub 仓库变量中设置：
 
 ```text
-EXPERTDOCK_API_BASE=https://你的正式域名
+EXPERTDOCK_API_BASE=https://ed.lorne.top
 ```
 
 推送 `v*` 标签会构建并发布 macOS/Windows Helper。将发布产物上传到 R2 后，网站通过 `/helper` 和 `/downloads/helper/*` 直接提供文件，不跳转 GitHub：

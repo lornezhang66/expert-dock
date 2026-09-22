@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	apiBase       = "https://expert-dock.18660190869.workers.dev"
-	helperVersion = "0.2.2"
+	apiBase       = "https://ed.lorne.top"
+	helperVersion = "0.2.3"
 )
 
 const (
