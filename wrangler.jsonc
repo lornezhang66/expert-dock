@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "expert-dock",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "vars": {
+    "MAX_UPLOAD_BYTES": "20971520",
+    "HELPER_DOWNLOAD_URL": "https://github.com/lornezhang66/expert-dock/releases/latest"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "expert-dock",
+      "database_id": "REPLACE_AFTER_D1_CREATE"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PACKAGES",
+      "bucket_name": "expert-dock-packages"
+    }
+  ]
+}
