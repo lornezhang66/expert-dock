@@ -5,7 +5,7 @@
   "compatibility_date": "2026-09-01",
   "vars": {
     "MAX_UPLOAD_BYTES": "20971520",
-    "HELPER_DOWNLOAD_URL": "https://github.com/lornezhang66/expert-dock/releases/latest"
+    "HELPER_VERSION": "0.1.0"
   },
   "d1_databases": [
     {

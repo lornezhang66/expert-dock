@@ -22,6 +22,9 @@ async function route(request, env) {
   if (method === "GET" && path === "/") return Response.redirect(`${url.origin}/dashboard`, 302);
   if (method === "GET" && path === "/health") return json({ ok: true });
   if (method === "GET" && path === "/login") return loginPage();
+  if (method === "GET" && path === "/helper") return helperPage(env);
+  if (method === "GET" && path === "/downloads/helper/macos") return downloadHelper("macos", env);
+  if (method === "GET" && path === "/downloads/helper/windows") return downloadHelper("windows", env);
   if (method === "POST" && path === "/login") return login(request, env);
   if (method === "POST" && path === "/logout") return logout(request);
 
@@ -95,6 +98,25 @@ async function dashboard(env) {
     LEFT JOIN shares s ON s.expert_version_id=v.id WHERE e.status='active' GROUP BY e.id ORDER BY e.updated_at DESC`).all();
   const items = results.length ? results.map((e) => `<a class="card expert" href="/dashboard/experts/${e.id}"><div class="row between"><div><h2>${escapeHtml(e.name)}</h2><p>${escapeHtml(e.description || "暂无简介")}</p></div><span class="tag">${e.type === "team" ? "专家团" : "专家"}</span></div><div class="meta">版本 ${escapeHtml(e.version || "-")} · ${e.share_count} 个分享链接</div></a>`).join("") : `<section class="card"><p>还没有专家，先上传一个 ZIP 包。</p></section>`;
   return page("专家管理", `<div class="row between"><div><h1>专家管理</h1><p class="muted">上传、发版并生成私域分享链接。</p></div><a class="button" href="/dashboard/experts/new">上传专家</a></div>${items}`, 200, adminNav());
+}
+
+function helperPage(env) {
+  const version = escapeHtml(env.HELPER_VERSION || "0.1.0");
+  return page("下载 Helper", `<section class="card"><h1>安装 ExpertDock Helper</h1><p>只需首次安装一次。之后点击专家分享页的“安装到 WorkBuddy”，浏览器会通过 <span class="code">expertdock://</span> 自动唤起 Helper。</p><div class="row"><a class="button" href="/downloads/helper/macos">下载 macOS 版</a><a class="button" href="/downloads/helper/windows">下载 Windows 版</a></div><p class="meta" style="margin-top:18px">版本 ${version} · 文件直接由 ExpertDock 提供，不会跳转到第三方网站。</p><h2>安装说明</h2><p><strong>macOS：</strong>解压后将 ExpertDock Helper 拖入“应用程序”并打开一次。若系统拦截，请右键应用并选择“打开”。</p><p><strong>Windows：</strong>解压后运行 <span class="code">install.cmd</span> 注册协议。</p><p><a href="javascript:history.back()">← 返回分享页</a></p></section>`);
+}
+
+async function downloadHelper(platform, env) {
+  const version = env.HELPER_VERSION || "0.1.0";
+  const name = `expertdock-helper-${platform}.zip`;
+  const object = await env.PACKAGES.get(`helpers/v${version}/${name}`);
+  if (!object) return page("文件不存在", `<section class="card"><h1>Helper 暂不可用</h1><p>当前平台安装包尚未上传，请稍后重试。</p></section>`, 404);
+  return new Response(object.body, { headers: {
+    "content-type": "application/zip",
+    "content-length": String(object.size),
+    "content-disposition": `attachment; filename="${name}"`,
+    "cache-control": "public, max-age=3600, immutable",
+    "x-content-type-options": "nosniff",
+  } });
 }
 
 function newExpertPage() {
@@ -174,7 +196,7 @@ async function sharePage(token, env) {
   const manifest = JSON.parse(item.manifest);
   const displayName = manifest.displayName?.zh || manifest.displayName?.en || item.name;
   const dependencies = manifest.dependencies ? `<h2>依赖声明</h2><pre class="code">${escapeHtml(JSON.stringify(manifest.dependencies, null, 2))}</pre>` : "";
-  return page(displayName, `<section class="card"><span class="tag">${item.type === "team" ? "专家团" : "专家"}</span><h1 style="margin-top:14px">${escapeHtml(displayName)}</h1><p>${escapeHtml(item.description)}</p><p class="meta">版本 ${escapeHtml(item.version)} · SHA-256 <span class="code">${escapeHtml(item.package_sha256.slice(0, 16))}…</span></p>${dependencies}<p class="muted">此内容来自第三方开发者。安装前请确认来源和所需权限。</p><p><button id="install">安装到 WorkBuddy</button> <a class="button secondary" href="${escapeHtml(env.HELPER_DOWNLOAD_URL || "#")}" target="_blank" rel="noopener">首次使用？安装 Helper</a></p><p id="hint" class="muted"></p></section><script>document.getElementById('install').onclick=async()=>{document.getElementById('hint').textContent='正在唤起 ExpertDock Helper…';fetch('/api/shares/${encodeURIComponent(token)}/install-click',{method:'POST',keepalive:true});location.href='expertdock://install?token=${encodeURIComponent(token)}';setTimeout(()=>document.getElementById('hint').textContent='未唤起？请先安装 ExpertDock Helper，然后重试。',1800)}</script>`);
+  return page(displayName, `<section class="card"><span class="tag">${item.type === "team" ? "专家团" : "专家"}</span><h1 style="margin-top:14px">${escapeHtml(displayName)}</h1><p>${escapeHtml(item.description)}</p><p class="meta">版本 ${escapeHtml(item.version)} · SHA-256 <span class="code">${escapeHtml(item.package_sha256.slice(0, 16))}…</span></p>${dependencies}<p class="muted">此内容来自第三方开发者。安装前请确认来源和所需权限。</p><p><button id="install">安装到 WorkBuddy</button> <a class="button secondary" href="/helper">首次使用？安装 Helper</a></p><p id="hint" class="muted"></p></section><script>document.getElementById('install').onclick=async()=>{document.getElementById('hint').textContent='正在唤起 ExpertDock Helper…';fetch('/api/shares/${encodeURIComponent(token)}/install-click',{method:'POST',keepalive:true});location.href='expertdock://install?token=${encodeURIComponent(token)}';setTimeout(()=>document.getElementById('hint').textContent='未唤起？请先安装 ExpertDock Helper，然后重试。',1800)}</script>`);
 }
 
 async function helperMetadata(token, origin, env) {

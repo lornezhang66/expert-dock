@@ -64,7 +64,14 @@ npm run deploy
 EXPERTDOCK_API_BASE=https://你的正式域名
 ```
 
-推送 `v*` 标签会构建并发布 macOS/Windows Helper。首次发布 Helper 后，分享页的下载链接会自动指向 GitHub latest release。
+推送 `v*` 标签会构建并发布 macOS/Windows Helper。将发布产物上传到 R2 后，网站通过 `/helper` 和 `/downloads/helper/*` 直接提供文件，不跳转 GitHub：
+
+```bash
+npx wrangler r2 object put expert-dock-packages/helpers/v版本号/expertdock-helper-macos.zip --remote --file ./expertdock-helper-macos.zip
+npx wrangler r2 object put expert-dock-packages/helpers/v版本号/expertdock-helper-windows.zip --remote --file ./expertdock-helper-windows.zip
+```
+
+同时将 `wrangler.jsonc` 中的 `HELPER_VERSION` 更新为对应版本号。
 
 ## Helper 目录判定
 
