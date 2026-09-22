@@ -8,7 +8,7 @@ WorkBuddy 专家/专家团私域分享器。开发者上传符合 WorkBuddy 2.4 
 - 专家 ZIP 安全校验、版本管理、R2 存储
 - 固定版本分享链接、启停和安装点击统计
 - 匿名分享页与 `expertdock://` 安装入口
-- Helper 自动扫描、下载、SHA-256 校验、备份、原子安装、注册和失败回滚
+- Helper 自动扫描、安装健康检查、版本升级、SHA-256 校验、备份、原子登记和失败回滚
 - WorkBuddy 2.4 包结构、配置、Agent、Team、头像和 MCP 依赖校验
 
 ## 架构
@@ -75,6 +75,6 @@ npx wrangler r2 object put expert-dock-packages/helpers/v版本号/expertdock-he
 
 ## Helper 目录判定
 
-Helper 只检查当前用户的已知 WorkBuddy 位置。只有 WorkBuddy 数据目录和唯一注册脚本同时通过校验时才写入；零候选、多候选或结构不完整会立即报错，正常流程没有目录选择器。
+Helper 只检查当前用户的已知 WorkBuddy 位置。目录结构不完整时立即报错，正常流程没有目录选择器。安装时直接维护 `my-experts` 市场清单、版本缓存、安装登记表和启用状态，并在完成后回读检查；不依赖可能不存在的 `register_expert.py`。Helper 每次唤起都会静默检查自身版本，升级失败时继续使用当前兼容版本，不增加用户操作。
 
 详细产品边界见 [`agent.md`](agent.md)，自动校验规则见 [`docs/workbuddy-expert-spec-2.4.md`](docs/workbuddy-expert-spec-2.4.md)。

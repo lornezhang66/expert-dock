@@ -32,6 +32,8 @@ async function route(request, env) {
   if (method === "GET" && match) return sharePage(match[1], env);
   match = path.match(/^\/api\/helper\/install\/([A-Za-z0-9_-]+)$/);
   if (method === "GET" && match) return helperMetadata(match[1], url.origin, env);
+  match = path.match(/^\/api\/helper\/latest\/(macos|windows)$/);
+  if (method === "GET" && match) return helperLatest(match[1], url.origin, env);
   match = path.match(/^\/api\/shares\/([A-Za-z0-9_-]+)\/download$/);
   if (method === "GET" && match) return downloadPackage(match[1], env);
   match = path.match(/^\/api\/shares\/([A-Za-z0-9_-]+)\/install-click$/);
@@ -202,7 +204,19 @@ async function sharePage(token, env) {
 async function helperMetadata(token, origin, env) {
   const item = await getShare(token, env);
   if (!item) return json({ error: "分享链接不存在、已停用或已过期" }, 404);
-  return json({ name: item.name, type: item.type, version: item.version, sha256: item.package_sha256, size: item.package_size, downloadUrl: `${origin}/api/shares/${encodeURIComponent(token)}/download` }, 200, { "cache-control": "no-store" });
+  const manifest = JSON.parse(item.manifest);
+  const displayName = manifest.displayName?.zh || manifest.displayName?.en || item.name;
+  return json({ name: item.name, displayName, type: item.type, version: item.version, sha256: item.package_sha256, size: item.package_size, downloadUrl: `${origin}/api/shares/${encodeURIComponent(token)}/download` }, 200, { "cache-control": "no-store" });
+}
+
+async function helperLatest(platform, origin, env) {
+  const object = await env.PACKAGES.get("helpers/latest.json");
+  if (!object) return json({ error: "Helper 升级信息不可用" }, 503);
+  let manifest;
+  try { manifest = JSON.parse(await object.text()); } catch { return json({ error: "Helper 升级信息损坏" }, 503); }
+  const item = manifest.platforms?.[platform];
+  if (!manifest.version || !item?.sha256 || !item?.size) return json({ error: "Helper 升级信息不完整" }, 503);
+  return json({ version: manifest.version, sha256: item.sha256, size: item.size, downloadUrl: `${origin}/downloads/helper/${platform}` }, 200, { "cache-control": "no-store" });
 }
 
 async function downloadPackage(token, env) {
