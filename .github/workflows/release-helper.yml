@@ -22,7 +22,7 @@ jobs:
         run: |
           BASE="${API_BASE:-https://expert-dock.18660190869.workers.dev}"
           VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.2.1"
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.2.2"
           mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
           GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-arm64 .
           GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-amd64 .
@@ -35,7 +35,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "dist/ExpertDock Helper.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" "dist/ExpertDock Helper.app/Contents/Info.plist"
           codesign --force --deep --sign - "dist/ExpertDock Helper.app"
-          test "$(\"dist/ExpertDock Helper.app/Contents/Resources/expertdock-core\" --version)" = "$VERSION"
+          CORE_VERSION=$("dist/ExpertDock Helper.app/Contents/Resources/expertdock-core" --version)
+          test "$CORE_VERSION" = "$VERSION"
           otool -l "dist/ExpertDock Helper.app/Contents/Resources/expertdock-core" | grep -q LC_UUID
           cd dist && ditto -c -k --keepParent "ExpertDock Helper.app" expertdock-helper-macos.zip
       - uses: actions/upload-artifact@v4
@@ -54,7 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://expert-dock.18660190869.workers.dev" }
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.2.1" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.2.2" }
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -ldflags "-s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
           if ((& dist/expertdock-helper.exe --version) -ne $version) { throw "Helper version check failed" }
