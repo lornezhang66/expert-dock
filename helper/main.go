@@ -21,7 +21,7 @@ import (
 
 var (
 	apiBase       = "https://expert-dock.18660190869.workers.dev"
-	helperVersion = "0.2.0"
+	helperVersion = "0.2.1"
 )
 
 const (
@@ -58,6 +58,10 @@ func main() {
 	}
 	if base := os.Getenv("EXPERTDOCK_API_BASE"); base != "" {
 		apiBase = strings.TrimRight(base, "/")
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(helperVersion)
+		return
 	}
 	if len(os.Args) == 2 && os.Args[1] == "--install-protocol" {
 		fatal(registerProtocol())
