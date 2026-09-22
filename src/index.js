@@ -19,13 +19,14 @@ async function route(request, env) {
   const path = url.pathname.replace(/\/$/, "") || "/";
   const method = request.method;
 
-  if (method === "GET" && path === "/") return Response.redirect(`${url.origin}/dashboard`, 302);
+  if (method === "GET" && path === "/") return homePage();
   if (method === "GET" && path === "/health") return json({ ok: true });
   if (method === "GET" && path === "/login") return loginPage();
   if (method === "GET" && path === "/helper") return helperPage(env);
   if (method === "GET" && path === "/downloads/helper/macos") return downloadHelper("macos", env);
   if (method === "GET" && path === "/downloads/helper/windows") return downloadHelper("windows", env);
   if (method === "POST" && path === "/login") return login(request, env);
+  if (method === "POST" && path === "/open") return openShareLink(request);
   if (method === "POST" && path === "/logout") return logout(request);
 
   let match = path.match(/^\/s\/([A-Za-z0-9_-]+)$/);
@@ -58,12 +59,53 @@ async function route(request, env) {
 
 function page(title, body, status = 200, extra = "") {
   return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} · ExpertDock</title><style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue","PingFang SC",Arial,sans-serif;color:#1d1d1f;background:#f5f5f7;font-synthesis:none}*{box-sizing:border-box}html{min-height:100%;background:#f5f5f7}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -10%,#fff 0,#f5f5f7 38rem);letter-spacing:-.011em}header{position:sticky;top:0;z-index:10;background:#fbfbfdcc;border-bottom:1px solid #0000000d;-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}nav{max-width:1040px;height:56px;margin:auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}nav a{color:inherit;text-decoration:none}.brand{display:inline-flex;align-items:center;gap:10px;font-weight:650;font-size:16px;letter-spacing:-.02em}.brand-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:linear-gradient(145deg,#111,#3a3a3c);color:#fff;font-size:10px;font-weight:750;letter-spacing:-.04em;box-shadow:inset 0 1px #ffffff3d,0 2px 8px #0002}.container{max-width:1040px;margin:0 auto;padding:64px 24px 96px}.card{background:#fff;border:1px solid #0000000a;border-radius:24px;padding:30px;margin-bottom:20px;box-shadow:0 1px 2px #00000008,0 12px 36px #0000000a;overflow-x:auto}h1,h2{margin:0;color:#1d1d1f;letter-spacing:-.035em}h1{font-size:clamp(32px,5vw,48px);line-height:1.04;font-weight:700}h2{font-size:21px;line-height:1.2;font-weight:650;margin-bottom:12px}p{line-height:1.55}.page-heading{margin-bottom:34px}.page-heading p{font-size:18px;margin:10px 0 0}.eyebrow{color:#6e6e73;font-size:13px;font-weight:650;letter-spacing:.04em;text-transform:uppercase}.hero-card{padding:clamp(30px,6vw,64px);background:linear-gradient(145deg,#fff 0%,#fafafa 65%,#f1f5ff 100%)}.hero-card>p{max-width:720px}.share-card{max-width:800px;margin:24px auto;padding:clamp(32px,7vw,68px)}.share-card h1{margin:18px 0}.share-card>.summary{font-size:19px;color:#424245;max-width:640px}.login-card{max-width:440px;margin:7vh auto 0;padding:42px}.login-card h1{font-size:40px}.login-card button{width:100%;margin-top:8px}label{display:block;font-size:14px;font-weight:600;margin:20px 0 8px;color:#3a3a3c}input,textarea,select{width:100%;padding:13px 14px;border:1px solid #d2d2d7;border-radius:12px;background:#fff;color:#1d1d1f;font:inherit;outline:none;transition:border-color .18s,box-shadow .18s}input:focus,textarea:focus,select:focus{border-color:#0071e3;box-shadow:0 0 0 4px #0071e31f}input[type=file]{background:#f5f5f7}textarea{min-height:112px;resize:vertical}.button,button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;border:0;border-radius:999px;background:#0071e3;color:#fff;padding:10px 19px;font:inherit;font-size:15px;font-weight:600;text-decoration:none;cursor:pointer;transition:transform .16s,background .16s,box-shadow .16s}.button:hover,button:hover{background:#0077ed;box-shadow:0 5px 14px #0071e326}.button:active,button:active{transform:scale(.98)}.button:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #0071e34d;outline-offset:3px}.button.secondary,button.secondary{background:#e8e8ed;color:#1d1d1f}.button.secondary:hover,button.secondary:hover{background:#dedee3;box-shadow:none}.button.danger,button.danger{background:#ff3b30}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.muted{color:#6e6e73}.error{color:#d70015;background:#fff2f2;border-radius:12px;padding:11px 13px}.success{color:#248a3d}.tag{display:inline-flex;align-items:center;background:#e8f2ff;color:#06c;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:600}.expert{display:block;color:inherit;text-decoration:none;transition:transform .2s,box-shadow .2s,border-color .2s}.expert h2{margin-bottom:8px}.expert p{color:#515154;margin:0 0 18px}.expert:hover{transform:translateY(-2px);border-color:#0000000f;box-shadow:0 2px 4px #00000008,0 18px 48px #00000012}.meta{font-size:13px;color:#86868b}.code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.88em;overflow-wrap:anywhere;background:#f2f2f7;padding:3px 7px;border-radius:7px}pre.code{padding:16px;white-space:pre-wrap;border:1px solid #0000000a}details{border-top:1px solid #e5e5ea;padding-top:18px}summary{list-style:none}summary::-webkit-details-marker{display:none}table{width:100%;border-collapse:collapse;min-width:560px}th,td{text-align:left;padding:14px 12px;border-bottom:1px solid #e5e5ea}th{font-size:12px;color:#86868b;text-transform:uppercase;letter-spacing:.04em;font-weight:600}td{font-size:14px}td a{color:#06c;text-decoration:none}.card>a,.container>p>a{color:#06c;text-decoration:none}@media(max-width:700px){nav{padding:0 18px}.container{padding:38px 16px 64px}.card{padding:22px;border-radius:20px}.hero-card,.share-card{padding:28px}.login-card{margin-top:3vh}.page-heading{align-items:flex-start}h1{font-size:34px}.button,button{min-height:44px}.hide-mobile{display:none}}
-</style></head><body><header><nav><a class="brand" href="/dashboard" aria-label="ExpertDock 首页"><span class="brand-mark">ED</span><span>ExpertDock</span></a>${extra}</nav></header><main class="container">${body}</main></body></html>`, { status, headers: { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin" } });
+:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Helvetica Neue","PingFang SC",Arial,sans-serif;color:#1d1d1f;background:#f5f5f7;font-synthesis:none}*{box-sizing:border-box}html{min-height:100%;background:#f5f5f7}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -10%,#fff 0,#f5f5f7 38rem);letter-spacing:-.011em}header{position:sticky;top:0;z-index:10;background:#fbfbfdcc;border-bottom:1px solid #0000000d;-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}nav{max-width:1040px;height:56px;margin:auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}nav a{color:inherit;text-decoration:none}.brand{display:inline-flex;align-items:center;gap:10px;font-weight:650;font-size:16px;letter-spacing:-.02em}.brand-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:linear-gradient(145deg,#111,#3a3a3c);color:#fff;font-size:10px;font-weight:750;letter-spacing:-.04em;box-shadow:inset 0 1px #ffffff3d,0 2px 8px #0002}.container{max-width:1040px;margin:0 auto;padding:64px 24px 96px}.card{background:#fff;border:1px solid #0000000a;border-radius:24px;padding:30px;margin-bottom:20px;box-shadow:0 1px 2px #00000008,0 12px 36px #0000000a;overflow-x:auto}h1,h2{margin:0;color:#1d1d1f;letter-spacing:-.035em}h1{font-size:clamp(32px,5vw,48px);line-height:1.04;font-weight:700}h2{font-size:21px;line-height:1.2;font-weight:650;margin-bottom:12px}p{line-height:1.55}.page-heading{margin-bottom:34px}.page-heading p{font-size:18px;margin:10px 0 0}.eyebrow{color:#6e6e73;font-size:13px;font-weight:650;letter-spacing:.04em;text-transform:uppercase}.hero-card{padding:clamp(30px,6vw,64px);background:linear-gradient(145deg,#fff 0%,#fafafa 65%,#f1f5ff 100%)}.hero-card>p{max-width:720px}.share-card{max-width:800px;margin:24px auto;padding:clamp(32px,7vw,68px)}.share-card h1{margin:18px 0}.share-card>.summary{font-size:19px;color:#424245;max-width:640px}.login-card{max-width:440px;margin:7vh auto 0;padding:42px}.login-card h1{font-size:40px}.login-card button{width:100%;margin-top:8px}label{display:block;font-size:14px;font-weight:600;margin:20px 0 8px;color:#3a3a3c}input,textarea,select{width:100%;padding:13px 14px;border:1px solid #d2d2d7;border-radius:12px;background:#fff;color:#1d1d1f;font:inherit;outline:none;transition:border-color .18s,box-shadow .18s}input:focus,textarea:focus,select:focus{border-color:#0071e3;box-shadow:0 0 0 4px #0071e31f}input[type=file]{background:#f5f5f7}textarea{min-height:112px;resize:vertical}.button,button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;border:0;border-radius:999px;background:#0071e3;color:#fff;padding:10px 19px;font:inherit;font-size:15px;font-weight:600;text-decoration:none;cursor:pointer;transition:transform .16s,background .16s,box-shadow .16s}.button:hover,button:hover{background:#0077ed;box-shadow:0 5px 14px #0071e326}.button:active,button:active{transform:scale(.98)}.button:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #0071e34d;outline-offset:3px}.button.secondary,button.secondary{background:#e8e8ed;color:#1d1d1f}.button.secondary:hover,button.secondary:hover{background:#dedee3;box-shadow:none}.button.danger,button.danger{background:#ff3b30}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.muted{color:#6e6e73}.error{color:#d70015;background:#fff2f2;border-radius:12px;padding:11px 13px}.success{color:#248a3d}.tag{display:inline-flex;align-items:center;background:#e8f2ff;color:#06c;border-radius:999px;padding:6px 11px;font-size:13px;font-weight:600}.expert{display:block;color:inherit;text-decoration:none;transition:transform .2s,box-shadow .2s,border-color .2s}.expert h2{margin-bottom:8px}.expert p{color:#515154;margin:0 0 18px}.expert:hover{transform:translateY(-2px);border-color:#0000000f;box-shadow:0 2px 4px #00000008,0 18px 48px #00000012}.meta{font-size:13px;color:#86868b}.code{font-family:"SFMono-Regular",Consolas,monospace;font-size:.88em;overflow-wrap:anywhere;background:#f2f2f7;padding:3px 7px;border-radius:7px}pre.code{padding:16px;white-space:pre-wrap;border:1px solid #0000000a}details{border-top:1px solid #e5e5ea;padding-top:18px}summary{list-style:none}summary::-webkit-details-marker{display:none}table{width:100%;border-collapse:collapse;min-width:560px}th,td{text-align:left;padding:14px 12px;border-bottom:1px solid #e5e5ea}th{font-size:12px;color:#86868b;text-transform:uppercase;letter-spacing:.04em;font-weight:600}td{font-size:14px}td a{color:#06c;text-decoration:none}.card>a,.container>p>a{color:#06c;text-decoration:none}.nav-links{display:flex;align-items:center;gap:20px;font-size:13px}.nav-links a{color:#424245}.nav-links a:hover{color:#06c}.landing{margin-top:-20px}.landing-hero{text-align:center;padding:72px 0 58px}.landing-hero h1{max-width:820px;margin:14px auto;font-size:clamp(44px,7vw,76px);line-height:.98}.landing-hero .lead{max-width:680px;margin:22px auto 30px;color:#6e6e73;font-size:clamp(18px,2.5vw,23px);line-height:1.45}.hero-actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap}.link-box{max-width:760px;margin:0 auto 72px;padding:34px;background:#fff;border:1px solid #0000000a;border-radius:26px;box-shadow:0 18px 50px #0000000d}.link-box h2{text-align:center;font-size:26px}.link-box>p{text-align:center}.link-form{display:grid;grid-template-columns:1fr auto;gap:10px;margin-top:22px}.link-form input{height:48px;border-radius:14px}.link-form button{border-radius:14px;min-width:108px}.steps-section{padding:28px 0 76px}.section-heading{text-align:center;max-width:650px;margin:0 auto 34px}.section-heading h2{font-size:36px}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.step{padding:28px;background:#fff;border:1px solid #0000000a;border-radius:22px}.step-number{display:grid;place-items:center;width:34px;height:34px;margin-bottom:24px;border-radius:50%;background:#1d1d1f;color:#fff;font-size:14px;font-weight:700}.step h3{margin:0 0 8px;font-size:20px;letter-spacing:-.025em}.step p{margin:0;color:#6e6e73}.trust-panel{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;padding:clamp(28px,6vw,56px);background:linear-gradient(145deg,#101114,#25262a);color:#f5f5f7;border-radius:28px}.trust-panel h2{color:#fff;font-size:36px}.trust-panel p{color:#aeaeb2}.trust-points{display:grid;gap:12px}.trust-point{padding:14px 16px;background:#ffffff0d;border:1px solid #ffffff12;border-radius:15px;font-size:14px}.landing-footer{text-align:center;padding:54px 0 0;color:#86868b;font-size:13px}@media(max-width:700px){nav{padding:0 18px}.container{padding:38px 16px 64px}.card{padding:22px;border-radius:20px}.hero-card,.share-card{padding:28px}.login-card{margin-top:3vh}.page-heading{align-items:flex-start}h1{font-size:34px}.button,button{min-height:44px}.hide-mobile{display:none}.nav-links a:first-child{display:none}.landing{margin-top:-12px}.landing-hero{padding:50px 0 42px}.landing-hero h1{font-size:46px}.link-box{padding:24px;margin-bottom:52px}.link-form{grid-template-columns:1fr}.link-form button{width:100%}.steps{grid-template-columns:1fr}.trust-panel{grid-template-columns:1fr}.section-heading h2,.trust-panel h2{font-size:30px}}
+</style></head><body><header><nav><a class="brand" href="/" aria-label="ExpertDock 首页"><span class="brand-mark">ED</span><span>ExpertDock</span></a>${extra}</nav></header><main class="container">${body}</main></body></html>`, { status, headers: { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin" } });
 }
 
 function adminNav() {
-  return `<form method="post" action="/logout"><button class="secondary">退出</button></form>`;
+  return `<div class="nav-links"><a href="/helper">下载 Helper</a><a href="/dashboard">管理后台</a></div><form method="post" action="/logout"><button class="secondary">退出</button></form>`;
+}
+
+function homePage() {
+  return page("首页", `
+  <section class="landing">
+    <div class="landing-hero">
+      <p class="eyebrow">WorkBuddy 专家分享平台</p>
+      <h1>好专家，<br>一键安装。</h1>
+      <p class="lead">打开朋友分享的专家链接，点击安装，ExpertDock 会自动把它装进你的 WorkBuddy。不套壳、不登录、不需要等官方审核。</p>
+      <div class="hero-actions"><a class="button" href="#open">打开分享链接</a><a class="button secondary" href="/helper">安装 Helper</a></div>
+    </div>
+    <div class="link-box" id="open">
+      <h2>有分享链接？</h2>
+      <p class="muted">粘贴朋友发给你的专家链接，立即查看详情。</p>
+      <form class="link-form" action="/open" method="post">
+        <input type="text" name="link" placeholder="例如 https://ed.lorne.top/s/xxxxxx" aria-label="分享链接" required>
+        <button type="submit">打开</button>
+      </form>
+    </div>
+    <div class="steps-section">
+      <div class="section-heading"><p class="eyebrow">How it works</p><h2>三步用上专家</h2><p class="muted">第一次多装一个 Helper，之后每次安装只要点一下。</p></div>
+      <div class="steps">
+        <div class="step"><span class="step-number">1</span><h3>打开链接</h3><p>点击朋友分享的专家链接，查看专家介绍、版本和依赖。</p></div>
+        <div class="step"><span class="step-number">2</span><h3>点击安装</h3><p>浏览器唤起 ExpertDock Helper，自动完成下载与安装。</p></div>
+        <div class="step"><span class="step-number">3</span><h3>召唤专家</h3><p>重启 WorkBuddy，在专家列表里找到它，开始对话。</p></div>
+      </div>
+    </div>
+    <div class="trust-panel">
+      <div>
+        <p class="eyebrow" style="color:#aeaeb2">安装即校验</p>
+        <h2>你装进去的，就是朋友发你的。</h2>
+        <p>每个专家包都经过完整校验，来源、版本、内容一一对应，安装失败自动回滚，不留半成品。</p>
+      </div>
+      <div class="trust-points">
+        <div class="trust-point">包内容与分享版本严格一致（SHA-256）</div>
+        <div class="trust-point">只写入 WorkBuddy 专家目录，不碰其他文件</div>
+        <div class="trust-point">覆盖安装前自动备份，失败立即恢复</div>
+      </div>
+    </div>
+    <p class="landing-footer">ExpertDock · 私域 WorkBuddy 专家分享 · 需要分享自己的专家？<a href="/dashboard">进入管理后台</a></p>
+  </section>`);
 }
 
 function loginPage(message = "") {
@@ -83,6 +125,23 @@ async function login(request, env) {
 function logout(request) {
   checkOrigin(request);
   return new Response(null, { status: 302, headers: { location: "/login", "set-cookie": "ed_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0" } });
+}
+
+async function openShareLink(request) {
+  checkOrigin(request);
+  const form = await request.formData();
+  const link = String(form.get("link") || "").trim();
+  let token = "";
+  if (link.includes("/s/")) {
+    token = link.slice(link.lastIndexOf("/s/") + 3).split(/[?#]/)[0];
+  } else if (/^[A-Za-z0-9_-]{20,128}$/.test(link)) {
+    token = link;
+  }
+  token = token.replace(/[^A-Za-z0-9_-]/g, "");
+  if (token.length < 20 || token.length > 128) {
+    return page("链接无效", `<section class="card share-card"><h1>链接无法识别</h1><p class="summary">请粘贴完整的分享链接，例如 <span class="code">https://ed.lorne.top/s/xxxxxx</span>。</p><div class="row" style="margin-top:26px"><a class="button" href="/">返回首页</a></div></section>`, 400);
+  }
+  return Response.redirect(`${new URL(request.url).origin}/s/${encodeURIComponent(token)}`, 303);
 }
 
 async function isAuthenticated(request, env) {

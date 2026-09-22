@@ -3,6 +3,7 @@
   "name": "expert-dock",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
+  "workers_dev": true,
   "routes": [
     { "pattern": "ed.lorne.top", "custom_domain": true }
   ],
