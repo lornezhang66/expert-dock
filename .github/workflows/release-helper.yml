@@ -20,13 +20,18 @@ jobs:
       - name: Build macOS app
         working-directory: helper
         run: |
-          BASE="${API_BASE:-https://expert-dock.workers.dev}"
-          mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS"
-          GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE" -o dist/helper-arm64 .
-          GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE" -o dist/helper-amd64 .
-          lipo -create dist/helper-arm64 dist/helper-amd64 -output "dist/ExpertDock Helper.app/Contents/MacOS/expertdock-helper"
+          BASE="${API_BASE:-https://expert-dock.18660190869.workers.dev}"
+          mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
+          GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE" -o dist/core-arm64 .
+          GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE" -o dist/core-amd64 .
+          lipo -create dist/core-arm64 dist/core-amd64 -output "dist/ExpertDock Helper.app/Contents/Resources/expertdock-core"
+          SDK=$(xcrun --sdk macosx --show-sdk-path)
+          xcrun swiftc -parse-as-library -sdk "$SDK" -target arm64-apple-macos12 macos/AppDelegate.swift -o dist/launcher-arm64 -framework AppKit
+          xcrun swiftc -parse-as-library -sdk "$SDK" -target x86_64-apple-macos12 macos/AppDelegate.swift -o dist/launcher-amd64 -framework AppKit
+          lipo -create dist/launcher-arm64 dist/launcher-amd64 -output "dist/ExpertDock Helper.app/Contents/MacOS/ExpertDockHelper"
           cp Info.plist "dist/ExpertDock Helper.app/Contents/Info.plist"
-          cd dist && zip -r expertdock-helper-macos.zip "ExpertDock Helper.app"
+          codesign --force --deep --sign - "dist/ExpertDock Helper.app"
+          cd dist && ditto -c -k --keepParent "ExpertDock Helper.app" expertdock-helper-macos.zip
       - uses: actions/upload-artifact@v4
         with:
           name: helper-macos
@@ -42,7 +47,7 @@ jobs:
         working-directory: helper
         shell: pwsh
         run: |
-          $base = if ($env:API_BASE) { $env:API_BASE } else { "https://expert-dock.workers.dev" }
+          $base = if ($env:API_BASE) { $env:API_BASE } else { "https://expert-dock.18660190869.workers.dev" }
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -ldflags "-s -w -X main.apiBase=$base" -o dist/expertdock-helper.exe .
           '@echo off

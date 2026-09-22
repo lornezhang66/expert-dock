@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-var apiBase = "https://expert-dock.workers.dev"
+var apiBase = "https://expert-dock.18660190869.workers.dev"
 
 const (
 	maxDownload = 20 << 20

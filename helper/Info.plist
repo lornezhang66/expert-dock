@@ -7,7 +7,8 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleExecutable</key><string>expertdock-helper</string>
+  <key>CFBundleExecutable</key><string>ExpertDockHelper</string>
+  <key>LSUIElement</key><true/>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>ExpertDock Install</string>
     <key>CFBundleURLSchemes</key><array><string>expertdock</string></array>
