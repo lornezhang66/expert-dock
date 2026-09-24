@@ -21,7 +21,7 @@ import (
 
 var (
 	apiBase       = "https://ed.lorne.top"
-	helperVersion = "0.2.3"
+	helperVersion = "0.2.4"
 )
 
 const (
@@ -82,11 +82,14 @@ func main() {
 		fatal(errors.New("用法：expertdock-helper expertdock://install?token=..."))
 		return
 	}
+	writeStatus("installing", "正在安装专家…")
 	message, err := install(rawURL)
 	if err != nil {
+		writeStatus("failed", err.Error())
 		notify("ExpertDock 安装失败", err.Error())
 		os.Exit(1)
 	}
+	writeStatus("ready", message)
 	if message != "" {
 		notify("ExpertDock", message)
 	}
@@ -205,7 +208,8 @@ type fileSnapshot struct {
 
 func acquireInstallLock(workBuddy string) (func(), error) {
 	lock := filepath.Join(workBuddy, ".expertdock-install.lock")
-	for attempt := 0; attempt < 2; attempt++ {
+	deadline := time.Now().Add(10 * time.Minute)
+	for time.Now().Before(deadline) {
 		if err := os.Mkdir(lock, 0o700); err == nil {
 			_ = os.WriteFile(filepath.Join(lock, "owner"), []byte(fmt.Sprintf("pid=%d\ntime=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))), 0o600)
 			return func() { _ = os.RemoveAll(lock) }, nil
@@ -218,9 +222,9 @@ func acquireInstallLock(workBuddy string) (func(), error) {
 				continue
 			}
 		}
-		return nil, errors.New("另一个 ExpertDock 安装正在进行；如十分钟后仍出现此提示，请重启 Helper")
+		time.Sleep(250 * time.Millisecond)
 	}
-	return nil, errors.New("无法获取 ExpertDock 安装锁")
+	return nil, errors.New("等待另一个 ExpertDock 安装完成超时；请重试")
 }
 
 func registerLocalPlugin(workBuddy, sourceDir string, meta metadata) (err error) {
@@ -743,11 +747,22 @@ func replaceExecutable(oldExecutable, rawURL string) error {
 	if err != nil {
 		return err
 	}
+	retryURL := rawURL + "&skip_update=1"
+	if runtime.GOOS == "windows" {
+		ui := filepath.Join(filepath.Dir(current), "helper-ui.ps1")
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if exists(ui) && localAppData != "" {
+			if err := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ui, "-Install", "-Silent").Run(); err == nil {
+				command := exec.Command(filepath.Join(localAppData, "ExpertDock", "expertdock-helper.exe"), retryURL)
+				command.Env = append(os.Environ(), "EXPERTDOCK_CLEANUP_DIR="+filepath.Dir(current))
+				return command.Start()
+			}
+		}
+	}
 	staged := oldExecutable + ".expertdock-new"
 	backup := oldExecutable + ".expertdock-old"
 	_ = os.Remove(staged)
 	_ = os.Remove(backup)
-	retryURL := rawURL + "&skip_update=1"
 	if err := copyFile(current, staged, 0o700); err != nil {
 		command := exec.Command(oldExecutable, retryURL)
 		_ = command.Start()
@@ -1088,6 +1103,16 @@ func registerProtocol() error {
 	}
 	notify("ExpertDock", "expertdock:// 协议注册成功。")
 	return nil
+}
+
+func writeStatus(state, message string) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	_ = writeJSONAtomic(filepath.Join(dir, "ExpertDock", "status.json"), map[string]string{
+		"state": state, "message": message, "version": helperVersion, "updatedAt": time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func notify(title, message string) {

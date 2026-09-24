@@ -22,7 +22,7 @@ jobs:
         run: |
           BASE="${API_BASE:-https://ed.lorne.top}"
           VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.2.3"
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.2.4"
           mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
           GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-arm64 .
           GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-amd64 .
@@ -55,14 +55,17 @@ jobs:
         shell: pwsh
         run: |
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://ed.lorne.top" }
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.2.3" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.2.4" }
           New-Item -ItemType Directory -Force dist | Out-Null
           go build -ldflags "-s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
           if ((& dist/expertdock-helper.exe --version) -ne $version) { throw "Helper version check failed" }
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path windows/helper-ui.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count) { throw ($errors | Out-String) }
+          Copy-Item windows/helper-ui.ps1 dist/helper-ui.ps1
           '@echo off
-          "%~dp0expertdock-helper.exe" --install-protocol
-          pause' | Set-Content -Encoding ascii dist/install.cmd
-          Compress-Archive -Path dist/expertdock-helper.exe,dist/install.cmd -DestinationPath dist/expertdock-helper-windows.zip
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0helper-ui.ps1" -Install' | Set-Content -Encoding ascii dist/install.cmd
+          Compress-Archive -Path dist/expertdock-helper.exe,dist/helper-ui.ps1,dist/install.cmd -DestinationPath dist/expertdock-helper-windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: helper-windows

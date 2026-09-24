@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestSafeZipPath(t *testing.T) {
 	for _, path := range []string{"expert/agents/main.md", ".codebuddy-plugin/plugin.json"} {
@@ -26,4 +29,22 @@ func TestValidName(t *testing.T) {
 			t.Fatalf("invalid name accepted: %s", name)
 		}
 	}
+}
+
+func TestInstallLockWaitsForCurrentInstall(t *testing.T) {
+	root := t.TempDir()
+	release, err := acquireInstallLock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		release()
+	}()
+	secondRelease, err := acquireInstallLock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRelease()
 }
