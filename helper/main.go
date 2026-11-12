@@ -64,7 +64,9 @@ func main() {
 			}
 		}
 	}
-	takeOverLegacyInstall()
+	// 注意：takeOverLegacyInstall 绝不放在 main() 顶部——--version/--prepare-env 等
+	// 工具调用（CI 校验、Inno Setup 安装步骤）会误触发迁移清扫，把发布 staging 目录
+	// 里的 shim 当残留删掉（本仓库真实踩过）。迁移只在 GUI 常驻/安装入口做，见 runGUI。
 	if base := os.Getenv("EXPERTDOCK_API_BASE"); base != "" {
 		apiBase = strings.TrimRight(base, "/")
 	}

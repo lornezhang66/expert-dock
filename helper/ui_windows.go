@@ -41,6 +41,8 @@ type guiApp struct {
 
 // runGUI Windows 常驻入口，不返回（内部 mw.Run() 阻塞或直接退出）
 func runGUI(rawURL string) {
+	// ps1→Go 迁移清扫只挂在真实使用入口（常驻/安装），工具型调用（--version 等）不触发
+	takeOverLegacyInstall()
 	if strings.HasPrefix(rawURL, relaunchSentinel) {
 		rawURL = "" // 自更新换血回来的实例：常驻启动，不重放安装
 	}

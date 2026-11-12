@@ -1,0 +1,22 @@
+{
+    "version":  "0.8.0",
+    "sha256":  "e6334192872b6278b988107b2e1e20ead677462eb110561209271343d6d126bd",
+    "size":  42274960,
+    "platforms":  {
+                      "windows":  {
+                                      "sha256":  "e6334192872b6278b988107b2e1e20ead677462eb110561209271343d6d126bd",
+                                      "size":  42274960
+                                  },
+                      "macos":  {
+                                    "sha256":  "78a97117dbf8c1fbe02dcb775db9cd1070e5c85ae0fff7561a392d3a279f8f72",
+                                    "size":  5917787
+                                }
+                  },
+    "installers":  {
+                       "windows":  {
+                                       "name":  "ExpertDock-Helper-Setup-0.8.0.exe",
+                                       "sha256":  "ab3c8aece3f5f24de9fb33f7aa3b5a576c20c49ca4a26cbcf7d5b3c38db82954",
+                                       "size":  42601095
+                                   }
+                   }
+}

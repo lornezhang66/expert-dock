@@ -22,7 +22,7 @@ jobs:
         run: |
           BASE="${API_BASE:-https://ed.lorne.top}"
           VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.2.5"
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.8.0"
           mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
           GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-arm64 .
           GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-amd64 .
@@ -34,6 +34,7 @@ jobs:
           cp Info.plist "dist/ExpertDock Helper.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "dist/ExpertDock Helper.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" "dist/ExpertDock Helper.app/Contents/Info.plist"
+          # ad-hoc 签名：Developer ID + 公证待产品化阶段接入（当前决策：签名搁置）
           codesign --force --deep --sign - "dist/ExpertDock Helper.app"
           CORE_VERSION=$("dist/ExpertDock Helper.app/Contents/Resources/expertdock-core" --version)
           test "$CORE_VERSION" = "$VERSION"
@@ -50,26 +51,53 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "stable" }
-      - name: Build Windows helper
+      - name: Build Windows GUI helper
         working-directory: helper
         shell: pwsh
         run: |
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://ed.lorne.top" }
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.2.5" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.8.0" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          go build -ldflags "-s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
+          # -H windowsgui：托盘常驻无控制台黑窗；winres syso（已提交）带 manifest+图标+版本信息
+          go build -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
           if ((& dist/expertdock-helper.exe --version) -ne $version) { throw "Helper version check failed" }
-          $tokens = $null; $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path windows/helper-ui.ps1), [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count) { throw ($errors | Out-String) }
-          Copy-Item windows/helper-ui.ps1 dist/helper-ui.ps1
-          '@echo off
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0helper-ui.ps1" -Install' | Set-Content -Encoding ascii dist/install.cmd
-          Compress-Archive -Path dist/expertdock-helper.exe,dist/helper-ui.ps1,dist/install.cmd -DestinationPath dist/expertdock-helper-windows.zip
+          # 更新包四件套装配（旧 v0.7.x 更新器硬性要求，缺任一将永久卡旧版）：
+          # shim 顶替 helper-ui.ps1，env.ps1 供旧链路校验，node zip 共用受管运行时
+          Copy-Item ..\build\legacy-shim.ps1 dist/helper-ui.ps1
+          Copy-Item ..\docs\legacy-windows-helper\helper-env.ps1 dist/helper-env.ps1
+          Copy-Item ..\build\install.cmd dist/install.cmd
+          Copy-Item assets/expertdock.ico dist/expertdock.ico
+          # 受管 Node 运行时：从线上当前版本包提取，哈希必须命中 env.go 钉死值
+          $pinned = ([regex]::Match((Get-Content env.go -Raw), 'helperNodeSha256\s+=\s+"([0-9a-f]{64})"')).Groups[1].Value
+          if (-not $pinned) { throw "无法从 env.go 读取 helperNodeSha256" }
+          $nonce = [Guid]::NewGuid().ToString("N")
+          $prev = Join-Path $env:TEMP "prev-release-$nonce.zip"
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "$base/downloads/helper/windows?nonce=$nonce" -OutFile $prev -UseBasicParsing
+          $stage = Join-Path $env:TEMP "prev-extract-$nonce"
+          Expand-Archive -Path $prev -DestinationPath $stage -Force
+          $nodeZip = Join-Path $stage "node-runtime-win-x64.zip"
+          if (-not (Test-Path $nodeZip)) { throw "上一版更新包内缺少 node-runtime-win-x64.zip" }
+          $actual = (Get-FileHash $nodeZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $pinned) { throw "Node 运行时哈希不匹配：$actual ≠ $pinned" }
+          Copy-Item $nodeZip dist/node-runtime-win-x64.zip -Force
+          Compress-Archive -Path dist/expertdock-helper.exe,dist/helper-ui.ps1,dist/expertdock.ico,dist/install.cmd,dist/helper-env.ps1,dist/node-runtime-win-x64.zip -DestinationPath dist/expertdock-helper-windows.zip
+      - name: Build Windows Setup (Inno Setup)
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.8.0" }
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          $isccPath = if ($iscc) { $iscc.Source } else { Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $isccPath)) { throw "runner 上未找到 Inno Setup：$isccPath" }
+          & $isccPath "/DAppVersion=$version" "/DSourceDir=$PWD\helper\dist" "/DOutputDir=$PWD\helper\dist" installer/ExpertDock-Helper.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败：$LASTEXITCODE" }
+          if (-not (Test-Path "helper/dist/ExpertDock-Helper-Setup-$version.exe")) { throw "安装器未生成" }
       - uses: actions/upload-artifact@v4
         with:
           name: helper-windows
-          path: helper/dist/expertdock-helper-windows.zip
+          path: |
+            helper/dist/expertdock-helper-windows.zip
+            helper/dist/ExpertDock-Helper-Setup-*.exe
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -80,5 +108,7 @@ jobs:
         with: { merge-multiple: true }
       - uses: softprops/action-gh-release@v2
         with:
-          files: "*.zip"
+          files: |
+            *.zip
+            ExpertDock-Helper-Setup-*.exe
           generate_release_notes: true
