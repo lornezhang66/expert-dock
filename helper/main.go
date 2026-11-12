@@ -67,6 +67,11 @@ func main() {
 		fatal(registerProtocol())
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--sync-mcp" {
+		// GMSCP-7877：常驻启动时同步一次（安装成功路径见 main() 尾部）
+		syncWorkBuddyMcp()
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "--replace" {
 		fatal(replaceExecutable(os.Args[2], os.Args[3]))
 		return
@@ -92,6 +97,8 @@ func main() {
 	writeStatus("ready", message)
 	if message != "" {
 		notify("ExpertDock", message)
+		// GMSCP-7877：安装成功后刷一次 MCP 版本；失败只记日志，不回滚安装结果
+		syncWorkBuddyMcp()
 	}
 }
 
