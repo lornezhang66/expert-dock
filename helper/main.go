@@ -72,6 +72,11 @@ func main() {
 		syncWorkBuddyMcp()
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--prepare-env" {
+		// 环境层：Setup/首装后单独触发也可用
+		fatal(prepareHelperEnvironment())
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "--replace" {
 		fatal(replaceExecutable(os.Args[2], os.Args[3]))
 		return
@@ -99,6 +104,10 @@ func main() {
 		notify("ExpertDock", message)
 		// GMSCP-7877：安装成功后刷一次 MCP 版本；失败只记日志，不回滚安装结果
 		syncWorkBuddyMcp()
+		// 环境层同理尽力而为：受管 Node 就位后 WorkBuddy 侧 MCP server 才有确定的 npx 运行时
+		if envErr := prepareHelperEnvironment(); envErr != nil {
+			helperLog("WARN", "环境", "运行环境准备失败（不影响本次安装）："+envErr.Error())
+		}
 	}
 }
 

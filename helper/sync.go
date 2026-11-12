@@ -51,10 +51,10 @@ func syncWorkBuddyMcp() mcpSyncResult {
 	root, mcpJson := workBuddyPaths()
 	result, err := syncExpertMcpDependencies(root, mcpJson)
 	if err != nil {
-		mcpSyncLog("ERROR", "同步中止："+err.Error())
+		helperLog("ERROR", "MCP同步", "同步中止："+err.Error())
 		return result
 	}
-	mcpSyncLog("INFO", fmt.Sprintf("MCP 同步完成：更新 %d / 跳过 %d / 扫描 %d",
+	helperLog("INFO", "MCP同步", fmt.Sprintf("MCP 同步完成：更新 %d / 跳过 %d / 扫描 %d",
 		result.Updated, result.Skipped, result.Scanned))
 	return result
 }
@@ -62,7 +62,7 @@ func syncWorkBuddyMcp() mcpSyncResult {
 func syncExpertMcpDependencies(marketplacesRoot, mcpJsonPath string) (mcpSyncResult, error) {
 	var result mcpSyncResult
 	if !exists(mcpJsonPath) {
-		mcpSyncLog("INFO", "用户级 mcp.json 不存在（尚未配置过任何 MCP），跳过——首装由 WorkBuddy 连接引导完成")
+		helperLog("INFO", "MCP同步", "用户级 mcp.json 不存在（尚未配置过任何 MCP），跳过——首装由 WorkBuddy 连接引导完成")
 		return result, nil
 	}
 	raw, err := os.ReadFile(mcpJsonPath)
@@ -107,9 +107,9 @@ func syncExpertMcpDependencies(marketplacesRoot, mcpJsonPath string) (mcpSyncRes
 		if err := writeFileAtomic(mcpJsonPath, buf.Bytes(), 0o600); err != nil {
 			return result, fmt.Errorf("写回失败：%w", err)
 		}
-		mcpSyncLog("INFO", fmt.Sprintf("写回 %s（更新 %d 个条目，无 BOM）", mcpJsonPath, result.Updated))
+		helperLog("INFO", "MCP同步", fmt.Sprintf("写回 %s（更新 %d 个条目，无 BOM）", mcpJsonPath, result.Updated))
 	} else {
-		mcpSyncLog("INFO", "无变更，不写回")
+		helperLog("INFO", "MCP同步", "无变更，不写回")
 	}
 	return result, nil
 }
@@ -124,7 +124,7 @@ func pluginMcpDeclaration(pluginDir string) map[string]any {
 		if raw, err := os.ReadFile(pluginJsonPath); err == nil {
 			var pj map[string]any
 			if err := json.Unmarshal(stripUtf8Bom(raw), &pj); err != nil {
-				mcpSyncLog("WARN", fmt.Sprintf("plugin.json 解析失败，跳过 %s：%v", pluginDir, err))
+				helperLog("WARN", "MCP同步", fmt.Sprintf("plugin.json 解析失败，跳过 %s：%v", pluginDir, err))
 				return nil
 			}
 			deps, _ := pj["dependencies"].(map[string]any)
@@ -145,7 +145,7 @@ func pluginMcpDeclaration(pluginDir string) map[string]any {
 	}
 	var decl map[string]any
 	if err := json.Unmarshal(stripUtf8Bom(raw), &decl); err != nil {
-		mcpSyncLog("WARN", fmt.Sprintf("声明文件解析失败，跳过 %s：%v", declPath, err))
+		helperLog("WARN", "MCP同步", fmt.Sprintf("声明文件解析失败，跳过 %s：%v", declPath, err))
 		return nil
 	}
 	if servers, ok := decl["mcpServers"].(map[string]any); ok && len(servers) > 0 {
@@ -163,7 +163,7 @@ func syncServerEntry(name string, declServer any, servers map[string]any, result
 	if !ok {
 		// 无既有条目（或既有条目损坏）：首装由 WorkBuddy 连接引导，绝不代写
 		result.Skipped++
-		mcpSyncLog("INFO", name+"：用户尚未配置过（无既有条目），首装由 WorkBuddy 连接引导完成，不代写")
+		helperLog("INFO", "MCP同步", name+"：用户尚未配置过（无既有条目），首装由 WorkBuddy 连接引导完成，不代写")
 		return
 	}
 	before, _ := json.Marshal(existing)
@@ -190,7 +190,7 @@ func syncServerEntry(name string, declServer any, servers map[string]any, result
 			} else {
 				// 占位符且无已配值：宁缺勿错——写死 "${KEY}" 字面量会被当环境变量原样传入
 				omitted++
-				mcpSyncLog("WARN", name+"："+key+" 无已配值，本次省略（请在 WorkBuddy 连接卡补配）")
+				helperLog("WARN", "MCP同步", name+"："+key+" 无已配值，本次省略（请在 WorkBuddy 连接卡补配）")
 			}
 		} else {
 			merged[key] = value
@@ -205,7 +205,7 @@ func syncServerEntry(name string, declServer any, servers map[string]any, result
 		if len(preserved) > 0 {
 			keep = strings.Join(preserved, "/")
 		}
-		mcpSyncLog("INFO", fmt.Sprintf("%s：已按包声明刷新（沿用已配值：%s；%d 个键待补配）", name, keep, omitted))
+		helperLog("INFO", "MCP同步", fmt.Sprintf("%s：已按包声明刷新（沿用已配值：%s；%d 个键待补配）", name, keep, omitted))
 	}
 }
 
@@ -277,6 +277,6 @@ func sortedSubDirs(dir string) ([]string, error) {
 }
 
 // 阶段 1 走 stdout；阶段 2 Windows 壳接入统一日志汇（对齐蓝本 %APPDATA%/ExpertDock/logs）
-func mcpSyncLog(level, message string) {
-	fmt.Printf("%s [ExpertDock][MCP同步][%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), level, message)
+func helperLog(level, area, message string) {
+	fmt.Printf("%s [ExpertDock][%s][%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), area, level, message)
 }
