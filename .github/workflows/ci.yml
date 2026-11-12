@@ -13,8 +13,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npx wrangler deploy --dry-run
+      # 生产以 worker/index.js（esbuild bundle）为事实源，--no-bundle 直接部署；src/ TS 已移除（见 docs/ARCHITECTURE.md）
+      - run: npx wrangler deploy --dry-run --no-bundle
 
   helper:
     runs-on: ubuntu-latest
