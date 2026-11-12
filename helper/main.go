@@ -24,6 +24,14 @@ var (
 	helperVersion = "0.2.5"
 )
 
+// UI/通知/下载进度钩子：Windows GUI（ui_windows.go）运行时赋值；非 Windows（mac 无头）恒为 nil，
+// writeStatus/notify/downloadVerified 走原有兜底路径。声明在跨平台文件，避免 main.go 引用平台私有符号。
+var (
+	uiStatusHook     func(state, message string)
+	notifyHook       func(title, message string)
+	downloadProgress func(done, total int64)
+)
+
 const (
 	maxDownload = 20 << 20
 	maxUnpacked = 100 << 20
@@ -82,23 +90,37 @@ func main() {
 		fatal(replaceExecutable(os.Args[2], os.Args[3]))
 		return
 	}
-	var rawURL string
+	rawURL := ""
 	for _, arg := range os.Args[1:] {
 		if strings.HasPrefix(arg, "expertdock://") {
 			rawURL = arg
 			break
 		}
 	}
+	if runtime.GOOS == "windows" {
+		// v0.8.0 起 Windows 裸进程即 GUI：无 URL=常驻托盘；带 URL=进 GUI 跑安装流程
+		runGUI(rawURL)
+		return
+	}
 	if rawURL == "" {
 		fatal(errors.New("用法：expertdock-helper expertdock://install?token=..."))
 		return
 	}
+	// mac 由 Swift launcher 无头驱动：退出码语义保持（失败非零）
+	if err := runInstallFlow(rawURL); err != nil {
+		os.Exit(1)
+	}
+}
+
+// runInstallFlow 完整安装序列：安装 → 状态 → 通知 → MCP 同步 → 环境准备。
+// Windows GUI 在后台 goroutine 调用；mac 无头路径直接调用。
+func runInstallFlow(rawURL string) error {
 	writeStatus("installing", "正在安装专家…")
 	message, err := install(rawURL)
 	if err != nil {
 		writeStatus("failed", err.Error())
 		notify("ExpertDock 安装失败", err.Error())
-		os.Exit(1)
+		return err
 	}
 	writeStatus("ready", message)
 	if message != "" {
@@ -110,6 +132,7 @@ func main() {
 			helperLog("WARN", "环境", "运行环境准备失败（不影响本次安装）："+envErr.Error())
 		}
 	}
+	return nil
 }
 
 func install(rawURL string) (string, error) {
@@ -765,17 +788,8 @@ func replaceExecutable(oldExecutable, rawURL string) error {
 		return err
 	}
 	retryURL := rawURL + "&skip_update=1"
-	if runtime.GOOS == "windows" {
-		ui := filepath.Join(filepath.Dir(current), "helper-ui.ps1")
-		localAppData := os.Getenv("LOCALAPPDATA")
-		if exists(ui) && localAppData != "" {
-			if err := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ui, "-Install", "-Silent").Run(); err == nil {
-				command := exec.Command(filepath.Join(localAppData, "ExpertDock", "expertdock-helper.exe"), retryURL)
-				command.Env = append(os.Environ(), "EXPERTDOCK_CLEANUP_DIR="+filepath.Dir(current))
-				return command.Start()
-			}
-		}
-	}
+	// v0.8.0 起删除 0.2.5 时代的 helper-ui.ps1 重装分支：Go 版启动即清扫 stub，该分支永不为真，
+	// 且一旦误触发会在 LOCALAPPDATA 外再拉起一份进程——直接走下方通用换名替换路径。
 	staged := oldExecutable + ".expertdock-new"
 	backup := oldExecutable + ".expertdock-old"
 	_ = os.Remove(staged)
@@ -925,6 +939,26 @@ func download(meta metadata) (string, error) {
 	return path, nil
 }
 
+// progressReader 下载进度：100ms 节流回报字节进度；仅 downloadProgress 钩子存在时才会被装配
+type progressReader struct {
+	reader io.Reader
+	total  int64
+	done   int64
+	last   time.Time
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.reader.Read(b)
+	if n > 0 && downloadProgress != nil {
+		p.done += int64(n)
+		if time.Since(p.last) >= 100*time.Millisecond {
+			p.last = time.Now()
+			downloadProgress(p.done, p.total)
+		}
+	}
+	return n, err
+}
+
 func downloadVerified(downloadURL, expectedHash string, expectedSize int64, pattern string) (string, error) {
 	response, err := getWithRetry(downloadURL)
 	if err != nil {
@@ -940,7 +974,14 @@ func downloadVerified(downloadURL, expectedHash string, expectedSize int64, patt
 	}
 	path := file.Name()
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, maxDownload+1))
+	source := io.LimitReader(response.Body, maxDownload+1)
+	if downloadProgress != nil {
+		source = &progressReader{reader: source, total: expectedSize}
+	}
+	written, copyErr := io.Copy(io.MultiWriter(file, hash), source)
+	if downloadProgress != nil {
+		downloadProgress(written, expectedSize) // 收尾刷新，别让进度停在 99%
+	}
 	closeErr := file.Close()
 	if copyErr != nil || closeErr != nil || written > maxDownload || written != expectedSize {
 		os.Remove(path)
@@ -1149,17 +1190,25 @@ func registerProtocol() error {
 	return nil
 }
 
+// writeStatus 双路状态：status.json（launcher/外部读取契约不变）+ GUI 状态窗钩子（Windows）
 func writeStatus(state, message string) {
 	dir, err := os.UserConfigDir()
-	if err != nil {
-		return
+	if err == nil {
+		_ = writeJSONAtomic(filepath.Join(dir, "ExpertDock", "status.json"), map[string]string{
+			"state": state, "message": message, "version": helperVersion, "updatedAt": time.Now().UTC().Format(time.RFC3339),
+		})
 	}
-	_ = writeJSONAtomic(filepath.Join(dir, "ExpertDock", "status.json"), map[string]string{
-		"state": state, "message": message, "version": helperVersion, "updatedAt": time.Now().UTC().Format(time.RFC3339),
-	})
+	if uiStatusHook != nil {
+		uiStatusHook(state, message)
+	}
 }
 
 func notify(title, message string) {
+	if notifyHook != nil {
+		notifyHook(title, message)
+		fmt.Printf("%s: %s\n", title, message)
+		return
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		_ = exec.Command("osascript", "-e", `on run argv`, "-e", `display dialog (item 2 of argv) with title (item 1 of argv) buttons {"好"} default button 1`, "-e", `end run`, "--", title, message).Run()
