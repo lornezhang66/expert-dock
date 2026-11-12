@@ -56,6 +56,7 @@ func main() {
 			}
 		}
 	}
+	takeOverLegacyInstall()
 	if base := os.Getenv("EXPERTDOCK_API_BASE"); base != "" {
 		apiBase = strings.TrimRight(base, "/")
 	}
@@ -1078,6 +1079,33 @@ func restore(target, backup string) {
 	_ = os.RemoveAll(target)
 	if backup != "" {
 		_ = renameWithRetry(backup, target)
+	}
+}
+
+// takeOverLegacyInstall 处理 v0.7.x(ps1) → v0.8.0(Go) 的迁移收尾。v0.7.x 的自更新链路
+// 强制要求更新包内存在 helper-ui.ps1（v0.8.0 包内放的是过渡 stub，见 build/legacy-shim.ps1），
+// Go 版接管后：协议重注册到 Go 本体（自愈）→ 清扫 stub 与旧脚本残留。全部尽力而为：
+// 文件被占用（杀软扫描中）就静默跳过、下次启动再试，绝不影响启动（对齐蓝本清扫语义）。
+func takeOverLegacyInstall() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	dir := filepath.Dir(exe)
+	if !exists(filepath.Join(dir, "helper-ui.ps1")) {
+		return // 非 ps1 迁移场景（Setup 全新安装）：无 stub 即无事可做
+	}
+	if err := registerProtocol(); err != nil {
+		helperLog("WARN", "迁移", "协议重注册失败："+err.Error())
+	}
+	for _, name := range []string{
+		"helper-ui.ps1", "helper-ui.ps1.old", "helper-ui.ps1.new",
+		"helper-env.ps1", "helper-env.ps1.old", "helper-env.ps1.new",
+		"install.cmd",
+	} {
+		if rmErr := os.Remove(filepath.Join(dir, name)); rmErr == nil {
+			helperLog("INFO", "迁移", "已清理旧版文件："+name)
+		}
 	}
 }
 
