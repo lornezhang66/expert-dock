@@ -149,21 +149,23 @@ func runGUI(rawURL string) {
 		})
 	}
 
-	// 启动序列（蓝本口径）：常驻启动先同步一次 MCP；带 URL 则直接进安装流程
+	// 启动序列（蓝本口径）：常驻启动先同步一次 MCP；带 URL 则直接进安装流程。
+	// 状态一律走 writeStatus 漏斗（标签 + status.json 双路）——驻留路径只刷标签不落盘
+	// 是迁移演练抓出的缺陷：status.json 是 launcher/外部消费契约，不能只在装包时更新。
 	go func() {
 		if rawURL == "" {
-			uiStatusHook("ready", "正在就绪…同步专家 MCP 配置")
+			writeStatus("ready", "正在就绪…同步专家 MCP 配置")
 			syncWorkBuddyMcp()
 			if envErr := prepareHelperEnvironment(); envErr != nil {
 				helperLog("WARN", "环境", "运行环境准备失败："+envErr.Error())
 			}
-			uiStatusHook("ready", "就绪。在分享页点「安装到 WorkBuddy」即可自动安装")
+			writeStatus("ready", "就绪。在分享页点「安装到 WorkBuddy」即可自动安装")
 			return
 		}
 		if err := runInstallFlow(rawURL); err != nil {
-			uiStatusHook("failed", "安装失败："+err.Error())
+			writeStatus("failed", "安装失败："+err.Error())
 		} else {
-			uiStatusHook("ready", "安装完成。")
+			writeStatus("ready", "安装完成。")
 		}
 	}()
 
@@ -217,26 +219,26 @@ func loadAppIcon() *walk.Icon {
 }
 
 func (app *guiApp) actionCheckUpdate() {
-	uiStatusHook("updating", "正在检查更新…")
+	writeStatus("updating", "正在检查更新…")
 	updated, err := maybeSelfUpdate(relaunchSentinel)
 	if err != nil {
-		uiStatusHook("ready", "检查更新失败："+err.Error())
+		writeStatus("ready", "检查更新失败："+err.Error())
 		return
 	}
 	if !updated {
-		uiStatusHook("ready", "已是最新版本 v"+helperVersion)
+		writeStatus("ready", "已是最新版本 v"+helperVersion)
 		return
 	}
 	// 换血进行中：给 --replace 子进程留出换文件+拉起新实例的时间，然后本进程退出放行单实例锁
-	uiStatusHook("updating", "发现新版本，正在切换…")
+	writeStatus("updating", "发现新版本，正在切换…")
 	time.Sleep(1500 * time.Millisecond)
 	os.Exit(0)
 }
 
 func (app *guiApp) actionSyncMcp() {
-	uiStatusHook("installing", "正在同步专家 MCP 配置…")
+	writeStatus("installing", "正在同步专家 MCP 配置…")
 	result := syncWorkBuddyMcp()
-	uiStatusHook("ready", fmt.Sprintf("同步完成：更新 %d / 跳过 %d / 扫描 %d", result.Updated, result.Skipped, result.Scanned))
+	writeStatus("ready", fmt.Sprintf("同步完成：更新 %d / 跳过 %d / 扫描 %d", result.Updated, result.Skipped, result.Scanned))
 }
 
 // openLogsDir 供托盘/窗口扩展使用（阶段 3 接日志汇后启用）

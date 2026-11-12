@@ -60,7 +60,9 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           # -H windowsgui：托盘常驻无控制台黑窗；winres syso（已提交）带 manifest+图标+版本信息
           go build -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
-          if ((& dist/expertdock-helper.exe --version) -ne $version) { throw "Helper version check failed" }
+          # cmd /c 中转：GUI 子系统程序的 stdout 在 PowerShell 管道捕获下不可靠（PS5.1 实测）
+          $verOut = cmd /c '"{0}" --version' -f (Resolve-Path dist/expertdock-helper.exe).Path
+          if ($verOut.Trim() -ne $version) { throw "Helper version check failed: '$verOut'" }
           # 更新包四件套装配（旧 v0.7.x 更新器硬性要求，缺任一将永久卡旧版）：
           # shim 顶替 helper-ui.ps1，env.ps1 供旧链路校验，node zip 共用受管运行时
           Copy-Item ..\build\legacy-shim.ps1 dist/helper-ui.ps1
