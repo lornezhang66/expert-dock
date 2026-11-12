@@ -50,7 +50,9 @@ SignedUninstaller=yes
 #endif
 
 [Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 中文翻译为仓库内 vendor 文件（installer/languages/）——GitHub runner 的 Inno Setup
+; 默认不带非官方翻译，compiler:Languages 路径在 CI 上不存在
+Name: "chinesesimp"; MessagesFile: "languages\ChineseSimplified.isl"
 
 [Files]
 Source: "{#SourceDir}\expertdock-helper.exe"; DestDir: "{app}"; Flags: ignoreversion
