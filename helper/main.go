@@ -21,7 +21,7 @@ import (
 
 var (
 	apiBase       = "https://ed.lorne.top"
-	helperVersion = "0.8.1"
+	helperVersion = "0.9.0"
 )
 
 // UI/通知/下载进度钩子：Windows GUI（ui_windows.go）运行时赋值；非 Windows（mac 无头）恒为 nil，

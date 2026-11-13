@@ -58,8 +58,8 @@ jobs:
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://ed.lorne.top" }
           $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.8.0" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          # -H windowsgui：托盘常驻无控制台黑窗；winres syso（已提交）带 manifest+图标+版本信息
-          go build -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
+          # -H windowsgui：无控制台黑窗；desktop,production：wails 生产构建标签（缺 production 会带调试组件）
+          go build -tags "desktop,production" -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
           # 版本检查用 Process 重定向：GUI 子系统程序的 stdout 经 shell 管道捕获不可靠（PS 实测）
           $psi = [System.Diagnostics.ProcessStartInfo]::new()
           $psi.FileName = (Resolve-Path dist/expertdock-helper.exe).Path
