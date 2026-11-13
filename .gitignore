@@ -4,3 +4,6 @@ node_modules/
 dist/
 .DS_Store
 helper/dist/
+build/release/
+build/runtime/
+*.syso.tmp

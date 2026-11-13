@@ -54,9 +54,9 @@ if (-not $versionDir.StartsWith($repoRootFull, [StringComparison]::OrdinalIgnore
 $envGo = [IO.File]::ReadAllText((Join-Path $repoRootFull "helper\env.go"))
 $pinnedSha = if ($envGo -match 'helperNodeSha256\s+=\s+"([0-9a-f]{64})"') { $Matches[1] } else { throw "无法从 env.go 读取 helperNodeSha256" }
 if (-not $NodeZipPath) {
-  $legacy = Get-ChildItem $repoRootFull -Recurse -Filter "node-runtime-win-x64.zip" -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -match '\\v0\.7\.' } | Select-Object -First 1
-  if ($legacy) { $NodeZipPath = $legacy.FullName }
+  # 默认取 build/runtime/ 下的受管运行时（37MB 二进制不入 git，.gitignore 已排除）
+  $candidate = Join-Path $buildRoot ("runtime\node-runtime-win-x64.zip")
+  if (Test-Path $candidate) { $NodeZipPath = $candidate }
 }
 if (-not ($NodeZipPath -and (Test-Path $NodeZipPath))) { throw "找不到受管 Node 运行时 zip，请用 -NodeZipPath 指定。" }
 $nodeSha = (Get-FileHash $NodeZipPath -Algorithm SHA256).Hash.ToLowerInvariant()

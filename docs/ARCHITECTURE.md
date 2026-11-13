@@ -1,5 +1,9 @@
 # ExpertDock Worker 架构理解
 
+> **⚠️ 历史文档（v0.7.x 时代快照，2026-11 之前）**：Helper 已换血为 Go 双端（wails GUI / Swift launcher），
+> Worker 事实源已迁至 `worker/index.js`，pi 适配已剔除。时效性内容以根目录 `CLAUDE.md` 与
+> `docs/ENVIRONMENT.md` 为准；本文保留作路由表、校验规则、D1 表结构等设计事实的参考。
+
 > **产品显示名：专家云盘**（代码标识 expertdock://、域名、helper 文件名不变）。
 > 从 Cloudflare API 拉取的生产打包产物：`source/index.js`（esbuild bundle，含 esbuild 辅助头 + src/zip.js + src/index.js + yaml/fflate 依赖；中文为明文 UTF-8）。
 > 线上地址：https://ed.lorne.top （workers.dev 子域：18660190869.workers.dev）
