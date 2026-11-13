@@ -22,6 +22,9 @@ import (
 //go:embed assets/expertdock.ico
 var appIconBytes []byte
 
+//go:embed assets/icon.png
+var appIconPNG []byte
+
 // UI/通知/下载进度钩子的变量声明在 main.go（跨平台）；此处只赋值与消费。
 
 const (
@@ -50,25 +53,40 @@ func runGUI(rawURL string) {
 
 	app := &guiApp{}
 	icon := loadAppIcon()
+	headerImg := loadHeaderImage()
 
 	err := dec.MainWindow{
 		AssignTo: &app.mw,
 		Title:    "专家云盘小助手",
 		Font:     dec.Font{Family: "Microsoft YaHei UI", PointSize: 9},
-		MinSize:  dec.Size{Width: 420, Height: 190},
-		Size:     dec.Size{Width: 440, Height: 230},
-		Layout:   dec.VBox{Margins: dec.Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
+		MinSize:  dec.Size{Width: 460, Height: 250},
+		Size:     dec.Size{Width: 460, Height: 250},
+		Layout:   dec.VBox{Margins: dec.Margins{Left: 18, Top: 16, Right: 18, Bottom: 14}, Spacing: 12},
 		Children: []dec.Widget{
-			dec.Label{Text: "专家云盘本地小助手", TextColor: walk.RGB(51, 51, 51)},
-			dec.Label{AssignTo: &app.status, Text: "就绪", MinSize: dec.Size{Height: 40}},
-			dec.ProgressBar{AssignTo: &app.progress, MinSize: dec.Size{Height: 16}},
-			dec.HSpacer{},
+			// 品牌头部：图标 + 产品名 + 版本副标题
+			dec.Composite{
+				Layout: dec.HBox{Spacing: 12, Margins: dec.Margins{Left: 0, Top: 0, Right: 0, Bottom: 2}},
+				Children: []dec.Widget{
+					dec.ImageView{Image: headerImg, Mode: dec.ImageViewModeZoom, MinSize: dec.Size{Width: 48, Height: 48}},
+					dec.Composite{
+						Layout: dec.VBox{Spacing: 3},
+						Children: []dec.Widget{
+							dec.Label{Text: "专家云盘小助手", Font: dec.Font{Family: "Microsoft YaHei UI", PointSize: 14, Bold: true}, TextColor: walk.RGB(0x1F, 0x1F, 0x1F)},
+							dec.Label{Text: "版本 v" + helperVersion + " · WorkBuddy 本地安装器", TextColor: walk.RGB(0x8C, 0x8C, 0x8C)},
+						},
+					},
+				},
+			},
+			dec.Label{AssignTo: &app.status, Text: "正在就绪…", MinSize: dec.Size{Height: 56}, TextColor: walk.RGB(0x59, 0x59, 0x59)},
+			dec.ProgressBar{AssignTo: &app.progress, MinSize: dec.Size{Height: 14}, Visible: false},
+			dec.VSpacer{},
 			dec.Composite{
 				Layout: dec.HBox{Spacing: 8},
 				Children: []dec.Widget{
-					dec.PushButton{Text: "检查更新", OnClicked: func() { go app.actionCheckUpdate() }},
-					dec.PushButton{Text: "同步 MCP 配置", OnClicked: func() { go app.actionSyncMcp() }},
-					dec.PushButton{Text: "退出", OnClicked: func() { exitGUI(app) }},
+					dec.HSpacer{},
+					dec.PushButton{Text: "检查更新", MinSize: dec.Size{Width: 96}, OnClicked: func() { go app.actionCheckUpdate() }},
+					dec.PushButton{Text: "同步 MCP 配置", MinSize: dec.Size{Width: 124}, OnClicked: func() { go app.actionSyncMcp() }},
+					dec.PushButton{Text: "退出", MinSize: dec.Size{Width: 88}, OnClicked: func() { exitGUI(app) }},
 				},
 			},
 		},
@@ -77,6 +95,9 @@ func runGUI(rawURL string) {
 		helperLog("ERROR", "界面", "主窗口创建失败："+err.Error())
 		notify("专家云盘", "界面初始化失败："+err.Error())
 		os.Exit(1)
+	}
+	if icon != nil {
+		app.mw.SetIcon(icon) // 标题栏品牌图标（此前只有托盘有，窗口用的是 walk 默认图标）
 	}
 	// 关窗=隐藏到托盘，不退出（托盘菜单/退出按钮才是真退出）
 	app.mw.Closing().Attach(func(canceled *bool, _ walk.CloseReason) {
@@ -124,8 +145,20 @@ func runGUI(rawURL string) {
 	uiStatusHook = func(state, message string) {
 		text := message
 		busy := state == "installing" || state == "updating"
+		// 状态着色：失败红 / 进行中品牌蓝 / 就绪灰
+		var color walk.Color
+		switch {
+		case state == "failed":
+			color = walk.RGB(0xD4, 0x38, 0x0D)
+		case busy:
+			color = walk.RGB(0x16, 0x77, 0xFF)
+		default:
+			color = walk.RGB(0x59, 0x59, 0x59)
+		}
 		app.sync(func() {
 			app.status.SetText(text)
+			app.status.SetTextColor(color)
+			app.progress.SetVisible(busy) // 进度条只在忙时出现，空闲不占视觉
 			if busy {
 				app.progress.SetMarqueeMode(true)
 				app.mw.Show()
@@ -216,6 +249,23 @@ func loadAppIcon() *walk.Icon {
 		return nil
 	}
 	return icon
+}
+
+// loadHeaderImage 从内嵌 PNG 加载窗口头部品牌图（walk.Image 仅支持 png/jpeg 解码，
+// ico 容器不行——icon.png 是从多帧 ico 抽出的 256px 帧）
+func loadHeaderImage() walk.Image {
+	tmp := filepath.Join(os.TempDir(), fmt.Sprintf("expertdock-%d.png", os.Getpid()))
+	if err := os.WriteFile(tmp, appIconPNG, 0o600); err != nil {
+		helperLog("WARN", "界面", "头部图标落盘失败："+err.Error())
+		return nil
+	}
+	defer os.Remove(tmp)
+	img, err := walk.NewImageFromFile(tmp)
+	if err != nil {
+		helperLog("WARN", "界面", "头部图标解码失败："+err.Error())
+		return nil
+	}
+	return img
 }
 
 func (app *guiApp) actionCheckUpdate() {
