@@ -4,7 +4,7 @@ $script:EnvironmentNodeVersion = '22.22.2'
 $script:EnvironmentNodeMinimum = 20
 $script:EnvironmentNodeSha256 = '65b064aec5a84388d356225c49f1fcc96e684f0c9a46168296cf78598a90f89a'
 $script:EnvironmentNpmAuthKey = '//nvwa.jiuqi.com.cn/nexus/repository/npm-gov-group/:_auth'
-$script:EnvironmentNpmAuth = 'Z292Z3Vlc3Q6cDR0YWJnMnE0cDV3'
+$script:EnvironmentNpmAuth = 'Z292Z3Vlc3Q6ZnZvVU16VDdyaVNl'
 
 function Test-HelperNode([string]$Path) {
   if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }

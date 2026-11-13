@@ -22,7 +22,7 @@ const (
 	// node-runtime-win-x64.zip 发布随包内置的 SHA-256（发布链固化，防分发链篡改）
 	helperNodeSha256   = "65b064aec5a84388d356225c49f1fcc96e684f0c9a46168296cf78598a90f89a"
 	helperNpmAuthKey   = "//nvwa.jiuqi.com.cn/nexus/repository/npm-gov-group/:_auth"
-	helperNpmAuthValue = "Z292Z3Vlc3Q6cDR0YWJnMnE0cDV3" // 内网 nexus 只读凭据（与蓝本一致，非机密）
+	helperNpmAuthValue = "Z292Z3Vlc3Q6ZnZvVU16VDdyaVNl" // 内网 nexus 只读凭据（与蓝本一致，非机密）
 )
 
 var (
