@@ -2,9 +2,9 @@
 //
 // 用法：
 //
-//	go run ./cmd/gencred -value 'user:password'
+//	go run ./cmd/gencred -value 'base64(user:password)'
 //
-// 输出两段 Go 常量：cipher+part1 粘进 env.go，part2 粘进 sync.go。
+// -value 接收 npm _auth= 后可直接使用的值（即 base64(user:password)），不要传明文。
 // 密钥 = SHA-256(part1 + part2)，两端拼接后派生，任意一半单独出现不构成可用密钥。
 // 说明：这是混淆层（防扫描器/strings），不是密码学边界——密钥随二进制分发，防不了逆向。
 package main

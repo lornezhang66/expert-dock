@@ -73,7 +73,7 @@ powershell build/build-release.ps1 -Version X.Y.Z -MacosZipPath <CI mac zip> -Pu
 - **GUI 测试**：多实例前先清场进程（单实例锁静默重试 8s）；windowsgui 构建的日志不可见，调试用 console 版；截图被遮挡用 `PrintWindow + PW_RENDERFULLCONTENT`
 - **迁移清扫**：takeOverLegacyInstall 只在 runGUI 入口调用，绝不放 main() 顶部（--version 等工具调用会误删发布 staging 的 shim——真踩过）
 - **测试脚本**：dot-source helper-ui.ps1 会挂起常驻托盘；AST 抽函数（Parser::ParseFile）跑
-- **凭据**：内网 nexus 只读账密嵌在 env.go（公开仓库，定位是公开只读访客）；轮换时三处同步（env.go + docs legacy 两份 ps1），发布前 curl 实测新旧凭据
+- **凭据**：内网 nexus 只读凭据以 AES-256-GCM 加密存储于 env.go/sync.go（密钥两半分置）；轮换用 `go run ./cmd/gencred -value 'base64(user:pass)'` 生成粘贴（-value 收 _auth 可直用的 base64 形态，勿传明文）；发布前 curl 实测；go test 严禁 `| tail` 掩码退出码（0.9.2 假绿事故）
 
 ## 语言与风格
 

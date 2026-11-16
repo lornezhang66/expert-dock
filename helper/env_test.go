@@ -29,15 +29,16 @@ func TestNpmWorkbuddyRcContent(t *testing.T) {
 	}
 }
 
-// 加密存储的凭据必须能正确解密回读（user:password 形态，含分隔符）；
-// 测试不断言明文——明文不允许出现在仓库任何位置。
+// 加密存储的凭据必须能正确解密回读。契约（v0.9.3 起）：解出值是 npm `_auth=` 后
+// 可直接使用的 base64 形态（不含冒号，仅 base64 字符集）；测试不断言明文——
+// 明文不允许出现在仓库任何位置。真实有效性由发布前 nexus 实测保证。
 func TestHelperNpmAuthDecrypts(t *testing.T) {
 	v1, err := helperNpmAuth()
 	if err != nil {
 		t.Fatalf("解密失败：%v", err)
 	}
-	if len(v1) == 0 || !strings.Contains(v1, ":") {
-		t.Fatalf("解密结果形态不符（应为 user:password）：长度 %d", len(v1))
+	if len(v1) < 16 || strings.Contains(v1, ":") {
+		t.Fatalf("解密结果形态不符（应为 base64 凭据串，不得含冒号明文）：长度 %d", len(v1))
 	}
 	v2, err := helperNpmAuth()
 	if err != nil || v2 != v1 {

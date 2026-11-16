@@ -11,6 +11,8 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,8 +35,8 @@ const (
 	// 密钥 = SHA-256(part1+part2)，两半分置 env.go 与 sync.go，避免单点 strings 抓取。
 	// 这是防扫描器/strings 的混淆层，不是密码学边界——密钥随二进制分发，防不了逆向。
 	// 轮换：go run ./cmd/gencred -value 'user:password' 重新生成并同步粘贴两处。
-	npmAuthCipherB64 = "iCfEO2Il9Ac0be2ZlpkfMkfFrMH/8ZentPc1r5syHH0177t+Z46eZ6ojkEO9LNaRcQ=="
-	npmAuthKeyPart1  = "250a8b426195513fe9d197092bb0aa69"
+	npmAuthCipherB64 = "25nITxqOus5o+kRiHMjznqMQ3Rx6mHq8IyEtPCaRQ54hf6+K1G6XlEq238zpdaQPT1DPcV8n3dY="
+	npmAuthKeyPart1  = "0e65629b23ca0b42d438ae776808389e"
 )
 
 var (
@@ -67,6 +69,9 @@ var (
 )
 
 // helperNpmAuth 解密内网 nexus 凭据（进程内仅解密一次）。
+// 密钥派生与 cmd/gencred 对齐：hex 解码两半后按【原始字节】拼接送 SHA-256
+// （此前用 hex 字符串文本派生，与 gencred 的原始字节派生不一致，真机解密必失败——已付学费）。
+// 解出的值必须是 npm `_auth=` 后可直接使用的形态（即 base64(user:password)）。
 // 解密失败视为安装包完整性问题：调用方中止环境准备并报错，绝不带着空凭据继续。
 func helperNpmAuth() (string, error) {
 	npmAuthOnce.Do(func() {
@@ -75,7 +80,13 @@ func helperNpmAuth() (string, error) {
 			npmAuthErr = fmt.Errorf("凭据密文无效（长度 %d）", len(raw))
 			return
 		}
-		key := sha256.Sum256([]byte(npmAuthKeyPart1 + npmAuthKeyPart2))
+		p1, err1 := hex.DecodeString(npmAuthKeyPart1)
+		p2, err2 := hex.DecodeString(npmAuthKeyPart2)
+		if err1 != nil || err2 != nil {
+			npmAuthErr = fmt.Errorf("密钥分片无效：%w", errors.Join(err1, err2))
+			return
+		}
+		key := sha256.Sum256(append(append([]byte{}, p1...), p2...))
 		block, err := aes.NewCipher(key[:])
 		if err != nil {
 			npmAuthErr = err
