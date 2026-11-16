@@ -243,6 +243,10 @@ func setNpxEnvironment(managerHome, nodeDirectory string) error {
 		return err
 	}
 	configPath := filepath.Join(managerHome, "npm-workbuddy.rc")
+	authValue, err := helperNpmAuth()
+	if err != nil {
+		return err
+	}
 	previous, _, err := getUserEnv("NPM_CONFIG_USERCONFIG")
 	if err != nil {
 		return err
@@ -258,7 +262,7 @@ func setNpxEnvironment(managerHome, nodeDirectory string) error {
 	if data, readErr := os.ReadFile(previous); readErr == nil {
 		previousLines = strings.Split(strings.TrimPrefix(string(data), "\xEF\xBB\xBF"), "\r\n")
 	}
-	if err := os.WriteFile(configPath, []byte(npmWorkbuddyRcContent(previousLines)), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(npmWorkbuddyRcContent(previousLines, authValue)), 0o600); err != nil {
 		return err
 	}
 	if err := setUserEnv("NPM_CONFIG_USERCONFIG", configPath, uint32(registry.SZ)); err != nil {

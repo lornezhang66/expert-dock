@@ -14,17 +14,34 @@ func TestNpmWorkbuddyRcContent(t *testing.T) {
 		"//other.registry/:_authToken=keepme",
 		"# a comment",
 	}
-	got := npmWorkbuddyRcContent(previous)
+	const auth = "TEST-AUTH-VALUE"
+	got := npmWorkbuddyRcContent(previous, auth)
 	want := "always-auth=true\r\n" +
-		helperNpmAuthKey + "=" + helperNpmAuthValue + "\r\n" +
+		helperNpmAuthKey + "=" + auth + "\r\n" +
 		"registry=https://npm.example.com/\r\n" +
 		"//other.registry/:_authToken=keepme\r\n" +
 		"# a comment"
 	if got != want {
 		t.Fatalf("rc 内容不符。\n得到：%q\n期望：%q", got, want)
 	}
-	if empty := npmWorkbuddyRcContent(nil); !strings.HasSuffix(empty, "\r\n") {
+	if empty := npmWorkbuddyRcContent(nil, auth); !strings.HasSuffix(empty, "\r\n") {
 		t.Fatalf("无既有配置时 rc 应以 CRLF 结尾：%q", empty)
+	}
+}
+
+// 加密存储的凭据必须能正确解密回读（user:password 形态，含分隔符）；
+// 测试不断言明文——明文不允许出现在仓库任何位置。
+func TestHelperNpmAuthDecrypts(t *testing.T) {
+	v1, err := helperNpmAuth()
+	if err != nil {
+		t.Fatalf("解密失败：%v", err)
+	}
+	if len(v1) == 0 || !strings.Contains(v1, ":") {
+		t.Fatalf("解密结果形态不符（应为 user:password）：长度 %d", len(v1))
+	}
+	v2, err := helperNpmAuth()
+	if err != nil || v2 != v1 {
+		t.Fatalf("重复解密结果不稳定：%q vs %q (%v)", v2, v1, err)
 	}
 }
 

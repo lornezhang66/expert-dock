@@ -4,7 +4,9 @@ $script:EnvironmentNodeVersion = '22.22.2'
 $script:EnvironmentNodeMinimum = 20
 $script:EnvironmentNodeSha256 = '65b064aec5a84388d356225c49f1fcc96e684f0c9a46168296cf78598a90f89a'
 $script:EnvironmentNpmAuthKey = '//nvwa.jiuqi.com.cn/nexus/repository/npm-gov-group/:_auth'
-$script:EnvironmentNpmAuth = 'Z292Z3Vlc3Q6ZnZvVU16VDdyaVNl'
+# 凭据自 v0.9.2 起迁移至 Go 环境层（AES-256-GCM 加密存储于 helper 二进制，见 helper/env.go）。
+# 本文件仅为 v0.7.x 旧更新链路的文件存在性校验而随包保留，Go 接管后即被清扫，不再功能执行。
+$script:EnvironmentNpmAuth = $null
 
 function Test-HelperNode([string]$Path) {
   if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }

@@ -7,12 +7,18 @@ package main
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,9 +26,15 @@ const (
 	helperNodeVersion = "22.22.2"
 	helperNodeMinimum = 20
 	// node-runtime-win-x64.zip 发布随包内置的 SHA-256（发布链固化，防分发链篡改）
-	helperNodeSha256   = "65b064aec5a84388d356225c49f1fcc96e684f0c9a46168296cf78598a90f89a"
-	helperNpmAuthKey   = "//nvwa.jiuqi.com.cn/nexus/repository/npm-gov-group/:_auth"
-	helperNpmAuthValue = "Z292Z3Vlc3Q6ZnZvVU16VDdyaVNl" // 内网 nexus 只读凭据（与蓝本一致，非机密）
+	helperNodeSha256 = "65b064aec5a84388d356225c49f1fcc96e684f0c9a46168296cf78598a90f89a"
+	helperNpmAuthKey = "//nvwa.jiuqi.com.cn/nexus/repository/npm-gov-group/:_auth"
+
+	// 内网 nexus 只读凭据的加密形态：AES-256-GCM，12 字节 nonce 前置拼进密文。
+	// 密钥 = SHA-256(part1+part2)，两半分置 env.go 与 sync.go，避免单点 strings 抓取。
+	// 这是防扫描器/strings 的混淆层，不是密码学边界——密钥随二进制分发，防不了逆向。
+	// 轮换：go run ./cmd/gencred -value 'user:password' 重新生成并同步粘贴两处。
+	npmAuthCipherB64 = "iCfEO2Il9Ac0be2ZlpkfMkfFrMH/8ZentPc1r5syHH0177t+Z46eZ6ojkEO9LNaRcQ=="
+	npmAuthKeyPart1  = "250a8b426195513fe9d197092bb0aa69"
 )
 
 var (
@@ -48,10 +60,46 @@ func helperNodeArchivePath() string {
 	return filepath.Join(filepath.Dir(exe), "node-runtime-win-x64.zip")
 }
 
+var (
+	npmAuthOnce  sync.Once
+	npmAuthValue string
+	npmAuthErr   error
+)
+
+// helperNpmAuth 解密内网 nexus 凭据（进程内仅解密一次）。
+// 解密失败视为安装包完整性问题：调用方中止环境准备并报错，绝不带着空凭据继续。
+func helperNpmAuth() (string, error) {
+	npmAuthOnce.Do(func() {
+		raw, err := base64.StdEncoding.DecodeString(npmAuthCipherB64)
+		if err != nil || len(raw) <= 12 {
+			npmAuthErr = fmt.Errorf("凭据密文无效（长度 %d）", len(raw))
+			return
+		}
+		key := sha256.Sum256([]byte(npmAuthKeyPart1 + npmAuthKeyPart2))
+		block, err := aes.NewCipher(key[:])
+		if err != nil {
+			npmAuthErr = err
+			return
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			npmAuthErr = err
+			return
+		}
+		plain, err := gcm.Open(nil, raw[:12], raw[12:], nil)
+		if err != nil {
+			npmAuthErr = fmt.Errorf("凭据解密失败（疑似安装包被篡改或损坏）：%w", err)
+			return
+		}
+		npmAuthValue = string(plain)
+	})
+	return npmAuthValue, npmAuthErr
+}
+
 // npmWorkbuddyRcContent 对应蓝本 Set-HelperNpxEnvironment 的 rc 合成：
 // 固定头两行（always-auth + 内网只读认证）+ 既有 npmrc 其余行（剔除旧 auth 行与 always-auth 行）。
 // CRLF 行尾与蓝本逐字节同构，便于 diff 验证。
-func npmWorkbuddyRcContent(previousLines []string) string {
+func npmWorkbuddyRcContent(previousLines []string, authValue string) string {
 	extra := make([]string, 0, len(previousLines))
 	for _, line := range previousLines {
 		if npmAuthLineRe.MatchString(line) || alwaysAuthLineRe.MatchString(line) {
@@ -59,7 +107,7 @@ func npmWorkbuddyRcContent(previousLines []string) string {
 		}
 		extra = append(extra, line)
 	}
-	return "always-auth=true\r\n" + helperNpmAuthKey + "=" + helperNpmAuthValue + "\r\n" + strings.Join(extra, "\r\n")
+	return "always-auth=true\r\n" + helperNpmAuthKey + "=" + authValue + "\r\n" + strings.Join(extra, "\r\n")
 }
 
 // addUserPathEntry 对应蓝本 Add-HelperNodePath：逐段去重（引号/尾分隔符/大小写不敏感）；

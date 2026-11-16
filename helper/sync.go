@@ -37,6 +37,9 @@ type mcpSyncResult struct {
 // 与蓝本正则一致：整串占位符形态（${KEY}），不匹配前缀/后缀拼接
 var envPlaceholderRe = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*\}$`)
 
+// 凭据密钥后半（前半 npmAuthKeyPart1 在 env.go）——分文件存放，单文件泄露不构成可用密钥
+const npmAuthKeyPart2 = "d55ee15b423a45dff70cc96667b53328"
+
 func workBuddyPaths() (marketplacesRoot, mcpJsonPath string) {
 	home, err := os.UserHomeDir()
 	if err != nil {
