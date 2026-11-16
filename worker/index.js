@@ -7196,16 +7196,16 @@ __name(inspectExpertZip, "inspectExpertZip");
 var encoder = new TextEncoder();
 var MAX_AGE = 7 * 24 * 60 * 60;
 var index_default = {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
-      return await route(request, env);
+      return await route(request, env, ctx);
     } catch (error) {
       console.error(error);
       return page("出错了", `<section class="card"><h1>操作失败</h1><p class="error">${escapeHtml(error.message || "出了点问题，稍后再试。")}</p><p><a href="javascript:history.back()">返回</a></p></section>`, 500);
     }
   }
 };
-async function route(request, env) {
+async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, "") || "/";
   const method = request.method;
@@ -7225,7 +7225,7 @@ async function route(request, env) {
   match = path.match(/^\/api\/helper\/install\/([A-Za-z0-9_-]+)$/);
   if (method === "GET" && match) return helperMetadata(match[1], url.origin, env);
   match = path.match(/^\/api\/helper\/latest\/(macos|windows)$/);
-  if (method === "GET" && match) return helperLatest(match[1], url.origin, env);
+  if (method === "GET" && match) return helperLatest(match[1], url.origin, env, ctx);
   match = path.match(/^\/api\/shares\/([A-Za-z0-9_-]+)\/download$/);
   if (method === "GET" && match) return downloadPackage(match[1], env);
   match = path.match(/^\/api\/shares\/([A-Za-z0-9_-]+)\/install-click$/);
@@ -7242,6 +7242,7 @@ async function route(request, env) {
   if (method === "POST" && match) return createShare(match[1], request, env);
   match = path.match(/^\/api\/shares\/([a-f0-9-]+)\/toggle$/);
   if (method === "POST" && match) return toggleShare(match[1], request, env);
+  if (method === "POST" && path === "/api/admin/gc") return gcEndpoint(request, env);
   return page("未找到", `<section class="card"><h1>404</h1><p>页面不存在。</p></section>`, 404);
 }
 __name(route, "route");
@@ -7720,9 +7721,95 @@ function newExpertPage() {
   return page("上传专家", `<div class="page-heading"><p class="eyebrow">New Expert</p><h1>上传专家</h1><p class="muted">按 WorkBuddy 2.4 规范打包后上传。</p></div><section class="card"><form method="post" action="/api/experts" enctype="multipart/form-data"><label for="package">专家包</label><input id="package" name="package" type="file" accept=".zip,application/zip" required><label for="description">展示简介</label><textarea id="description" name="description" maxlength="500" placeholder="不填就用包里的简介"></textarea><label for="releaseNotes">版本说明</label><textarea id="releaseNotes" name="releaseNotes" maxlength="1000"></textarea><p><button class="btn btn-primary" type="submit">上传</button> <a class="btn" href="/dashboard">取消</a></p></form></section>`, 200, adminNav());
 }
 __name(newExpertPage, "newExpertPage");
+// 保留策略：每专家仅保留最新 keep 版（created_at 同秒时按 rowid 即插入序定新旧）；
+// 超限版本的 R2 对象、分享链接、版本行一并清除。流水线自动上传场景下每次上传触发，
+// 增长被封顶（v0.9.1 基点治理，2026-11-16）。
+async function sweepExpertRetention(env, expertId, keep = 3) {
+  const { results } = await env.DB.prepare("SELECT v.id, v.package_key FROM expert_versions v WHERE v.expert_id=? ORDER BY v.created_at DESC, v.rowid DESC").bind(expertId).all();
+  const stale = (results || []).slice(keep);
+  let removed = 0;
+  for (const v of stale) {
+    if (v.package_key) await env.PACKAGES.delete(v.package_key);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM shares WHERE expert_version_id=?").bind(v.id),
+      env.DB.prepare("DELETE FROM expert_versions WHERE id=?").bind(v.id)
+    ]);
+    removed++;
+  }
+  return removed;
+}
+__name(sweepExpertRetention, "sweepExpertRetention");
+async function appendVersion(env, expert, upload) {
+  const versionId = crypto.randomUUID();
+  const key = `packages/${expert.id}/${upload.manifest.version}-${crypto.randomUUID()}.zip`;
+  await env.PACKAGES.put(key, upload.bytes, { httpMetadata: { contentType: "application/zip" }, customMetadata: { sha256: upload.sha256 } });
+  try {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO expert_versions (id,expert_id,version,package_key,package_sha256,package_size,manifest,release_notes) VALUES (?,?,?,?,?,?,?,?)").bind(versionId, expert.id, upload.manifest.version, key, upload.sha256, upload.bytes.length, JSON.stringify(upload.manifest), upload.releaseNotes),
+      env.DB.prepare("UPDATE experts SET description=?,type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(upload.description || expert.description, upload.manifest.expertType === "team" ? "team" : "expert", expert.id)
+    ]);
+  } catch (error) {
+    await env.PACKAGES.delete(key);
+    throw error;
+  }
+  await sweepExpertRetention(env, expert.id, 3);
+  return versionId;
+}
+__name(appendVersion, "appendVersion");
+// helper 发布物保留：每版约 90MB（windows zip+setup+mac zip），是 R2 占地主体；
+// 仅保留最近 keep 个版本目录。客户端升级只认 latest.json 指向的当前版，历史版无消费方。
+async function sweepHelperReleases(env, keep = 2) {
+  const byVersion = /* @__PURE__ */ new Map();
+  let cursor;
+  do {
+    const list = await env.PACKAGES.list({ prefix: "helpers/", cursor });
+    for (const object of list.objects) {
+      const m = object.key.match(/^helpers\/v([^/]+)\//);
+      if (!m) continue;
+      if (!byVersion.has(m[1])) byVersion.set(m[1], []);
+      byVersion.get(m[1]).push(object.key);
+    }
+    cursor = list.truncated ? list.cursor : void 0;
+  } while (cursor);
+  const versionOf = (v) => v.split(".").map((n) => isNaN(Number(n)) ? n : Number(n));
+  const compare = (a, b) => {
+    const va = versionOf(a), vb = versionOf(b);
+    for (let i = 0; i < Math.max(va.length, vb.length); i++) {
+      const x = va[i] ?? 0, y = vb[i] ?? 0;
+      if (x !== y) return x < y ? -1 : 1;
+    }
+    return 0;
+  };
+  const versions = [...byVersion.keys()].sort(compare);
+  const stale = versions.slice(0, Math.max(0, versions.length - keep));
+  for (const v of stale) for (const key of byVersion.get(v)) await env.PACKAGES.delete(key);
+  return stale;
+}
+__name(sweepHelperReleases, "sweepHelperReleases");
+async function gcAll(env) {
+  const { results } = await env.DB.prepare("SELECT id FROM experts").all();
+  let removed = 0;
+  for (const expert of results || []) removed += await sweepExpertRetention(env, expert.id, 3);
+  const helperReleasesRemoved = await sweepHelperReleases(env, 2);
+  return { expertVersionsRemoved: removed, helperReleasesRemoved };
+}
+__name(gcAll, "gcAll");
+async function gcEndpoint(request, env) {
+  checkOrigin(request);
+  const result = await gcAll(env);
+  return json({ ok: true, keepExpertVersions: 3, keepHelperReleases: 2, ...result });
+}
+__name(gcEndpoint, "gcEndpoint");
 async function createExpert(request, env) {
   checkOrigin(request);
   const upload = await readUpload(request, env);
+  // 同名专家合并：流水线重复上传同一专家时追加为版本而非新建条目（防 R2/DB 无界膨胀）。
+  // 合并目标取同名专家中的首个（rowid 序，即最早创建的主条目）。
+  const existing = await env.DB.prepare("SELECT * FROM experts WHERE name=?").bind(upload.manifest.name).first();
+  if (existing) {
+    await appendVersion(env, existing, upload);
+    return redirect(`/dashboard/experts/${existing.id}`);
+  }
   const id = crypto.randomUUID();
   const versionId = crypto.randomUUID();
   const key = `packages/${id}/${upload.manifest.version}-${crypto.randomUUID()}.zip`;
@@ -7755,18 +7842,7 @@ async function addVersion(expertId, request, env) {
   if (!expert) throw new Error("专家不存在");
   const upload = await readUpload(request, env);
   if (upload.manifest.name !== expert.name) throw new Error("新包 name 和专家对不上");
-  const id = crypto.randomUUID();
-  const key = `packages/${expertId}/${upload.manifest.version}-${crypto.randomUUID()}.zip`;
-  await env.PACKAGES.put(key, upload.bytes, { httpMetadata: { contentType: "application/zip" }, customMetadata: { sha256: upload.sha256 } });
-  try {
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO expert_versions (id,expert_id,version,package_key,package_sha256,package_size,manifest,release_notes) VALUES (?,?,?,?,?,?,?,?)").bind(id, expertId, upload.manifest.version, key, upload.sha256, upload.bytes.length, JSON.stringify(upload.manifest), upload.releaseNotes),
-      env.DB.prepare("UPDATE experts SET description=?,type=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(upload.description || expert.description, upload.manifest.expertType === "team" ? "team" : "expert", expertId)
-    ]);
-  } catch (error) {
-    await env.PACKAGES.delete(key);
-    throw error;
-  }
+  await appendVersion(env, expert, upload);
   return redirect(`/dashboard/experts/${expertId}`);
 }
 __name(addVersion, "addVersion");
@@ -7804,7 +7880,9 @@ async function helperMetadata(token, origin, env) {
   return json({ name: item.name, displayName, type: item.type, version: item.version, sha256: item.package_sha256, size: item.package_size, downloadUrl: `${origin}/api/shares/${encodeURIComponent(token)}/download` }, 200, { "cache-control": "no-store" });
 }
 __name(helperMetadata, "helperMetadata");
-async function helperLatest(platform, origin, env) {
+async function helperLatest(platform, origin, env, ctx) {
+  // 客户端每次更新检查顺带自愈清扫 helper 旧发布物（仅当前+前一版之后的），R2 不随发版无界增长
+  if (ctx) ctx.waitUntil(sweepHelperReleases(env, 2));
   const object = await env.PACKAGES.get("helpers/latest.json");
   if (!object) return json({ error: "Helper 升级信息不可用" }, 503);
   let manifest;
