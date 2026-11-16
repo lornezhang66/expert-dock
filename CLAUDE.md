@@ -70,7 +70,7 @@ powershell build/build-release.ps1 -Version X.Y.Z -MacosZipPath <CI mac zip> -Pu
 
 - **专家包**：同名专家上传自动合并为版本（不再新建条目）；每专家保留最新 3 版，超限版本的 R2 对象/分享/版本行在上传时自动清除（sweepExpertRetention）
 - **helper 发布物**：每版约 90MB，仅保留最近 2 版；客户端每次更新检查（/api/helper/latest）触发 waitUntil 自愈清扫（sweepHelperReleases）
-- **手动全量 GC**：管理员会话下 （保留 3 版专家 + 2 版 helper）
+- **手动全量 GC**：管理员会话下 POST /api/admin/gc（保留 3 版专家 + 2 版 helper）
 - 历史包袱：git 历史含 0.8.0 时代 staging 二进制约 180MB（filter-repo 评估后放弃）
 
 ## 高频踩坑（已付过学费，勿重蹈）
