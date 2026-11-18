@@ -21,7 +21,7 @@ import (
 
 var (
 	apiBase       = "https://ed.lorne.top"
-	helperVersion = "0.9.4"
+	helperVersion = "0.9.5"
 )
 
 // UI/通知/下载进度钩子：Windows GUI（ui_windows.go）运行时赋值；非 Windows（mac 无头）恒为 nil，
@@ -33,9 +33,13 @@ var (
 )
 
 const (
+	// 专家包下载上限：Worker 侧 MAX_UPLOAD_BYTES 同为 20MB，两端成对
 	maxDownload = 20 << 20
-	maxUnpacked = 100 << 20
-	maxFiles    = 1000
+	// helper 自更新包上限：更新 zip 含受管 Node 运行时（v0.9.x 已 40MB+），
+	// 不能复用专家包的 20MB 上限（0.2.5 时代遗留，曾致自更新报"升级包元数据无效"）
+	maxHelperUpdate = 96 << 20
+	maxUnpacked     = 100 << 20
+	maxFiles        = 1000
 )
 
 type metadata struct {
@@ -699,7 +703,7 @@ func maybeSelfUpdate(rawURL string) (bool, error) {
 	if !versionGreater(update.Version, helperVersion) {
 		return false, nil
 	}
-	if update.Size < 1 || update.Size > maxDownload || len(update.SHA256) != 64 {
+	if update.Size < 1 || update.Size > maxHelperUpdate || len(update.SHA256) != 64 {
 		return false, errors.New("升级包元数据无效")
 	}
 	base, _ := url.Parse(apiBase)
@@ -707,7 +711,7 @@ func maybeSelfUpdate(rawURL string) (bool, error) {
 	if err != nil || downloadURL.Scheme != "https" || downloadURL.Host != base.Host {
 		return false, errors.New("升级包地址不可信")
 	}
-	archive, err := downloadVerified(update.DownloadURL, update.SHA256, update.Size, "expertdock-update-*.zip")
+	archive, err := downloadVerified(update.DownloadURL, update.SHA256, update.Size, "expertdock-update-*.zip", maxHelperUpdate)
 	if err != nil {
 		return false, fmt.Errorf("下载 Helper 升级包：%w", err)
 	}
@@ -934,7 +938,7 @@ func fetchMetadata(token string) (metadata, error) {
 }
 
 func download(meta metadata) (string, error) {
-	path, err := downloadVerified(meta.DownloadURL, meta.SHA256, meta.Size, "expertdock-*.zip")
+	path, err := downloadVerified(meta.DownloadURL, meta.SHA256, meta.Size, "expertdock-*.zip", maxDownload)
 	if err != nil {
 		return "", fmt.Errorf("下载专家包：%w", err)
 	}
@@ -961,7 +965,9 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-func downloadVerified(downloadURL, expectedHash string, expectedSize int64, pattern string) (string, error) {
+// downloadVerified 带大小上限的校验下载：expectedSize 逐字节核对 + maxBytes 硬上限
+// （专家包与 helper 自更新包上限不同，见 maxDownload / maxHelperUpdate）
+func downloadVerified(downloadURL, expectedHash string, expectedSize int64, pattern string, maxBytes int64) (string, error) {
 	response, err := getWithRetry(downloadURL)
 	if err != nil {
 		return "", err
@@ -976,7 +982,7 @@ func downloadVerified(downloadURL, expectedHash string, expectedSize int64, patt
 	}
 	path := file.Name()
 	hash := sha256.New()
-	source := io.LimitReader(response.Body, maxDownload+1)
+	source := io.LimitReader(response.Body, maxBytes+1)
 	if downloadProgress != nil {
 		source = &progressReader{reader: source, total: expectedSize}
 	}
@@ -985,7 +991,7 @@ func downloadVerified(downloadURL, expectedHash string, expectedSize int64, patt
 		downloadProgress(written, expectedSize) // 收尾刷新，别让进度停在 99%
 	}
 	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil || written > maxDownload || written != expectedSize {
+	if copyErr != nil || closeErr != nil || written > maxBytes || written != expectedSize {
 		os.Remove(path)
 		return "", errors.New("下载不完整或超过大小限制")
 	}
