@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/energye/systray"
@@ -198,17 +197,11 @@ func startTray(ctx context.Context) {
 		systray.SetTooltip("专家云盘小助手 v" + helperVersion)
 		mOpen := systray.AddMenuItem("打开主窗口", "显示主窗口")
 		mSync := systray.AddMenuItem("同步 MCP 配置", "刷新专家 MCP 版本")
-		mLogs := systray.AddMenuItem("打开日志文件夹", "查看本地运行日志")
 		systray.AddSeparator()
 		mQuit := systray.AddMenuItem("退出", "退出小助手")
 		mOpen.Click(func() {
 			if ctx != nil {
 				wailsruntime.WindowShow(ctx)
-			}
-		})
-		mLogs.Click(func() {
-			if dir, ok := ensureLogDir(); ok {
-				exec.Command("explorer", dir).Start()
 			}
 		})
 		mSync.Click(func() {
