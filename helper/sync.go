@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -279,7 +280,63 @@ func sortedSubDirs(dir string) ([]string, error) {
 	return names, nil
 }
 
-// 阶段 1 走 stdout；阶段 2 Windows 壳接入统一日志汇（对齐蓝本 %APPDATA%/ExpertDock/logs）
+// ---- 统一日志汇 ----
+// stdout 供 console 构建/调试；文件（%APPDATA%/ExpertDock/logs/helper-YYYYMMDD.log，与 ps1
+// 时代同位置同格式）是 windowsgui 构建下唯一可观测性来源。写失败静默——日志系统绝不反噬主流程。
+
+var (
+	logWriteMu sync.Mutex
+	logDirOnce sync.Once
+	logDirPath string
+	logDirOK   bool
+)
+
+func ensureLogDir() (string, bool) {
+	logDirOnce.Do(func() {
+		dir, err := os.UserConfigDir()
+		if err != nil {
+			return
+		}
+		logDirPath = filepath.Join(dir, "ExpertDock", "logs")
+		if err := os.MkdirAll(logDirPath, 0o700); err != nil {
+			logDirPath = ""
+			return
+		}
+		logDirOK = true
+		pruneOldLogs(logDirPath) // 每进程一次的过期清理
+	})
+	return logDirPath, logDirOK
+}
+
+// pruneOldLogs 删除 7 天前的日志（文件名 helper-YYYYMMDD.log，字符串比较即日期比较）
+func pruneOldLogs(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().AddDate(0, 0, -7).Format("20060102")
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "helper-") || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		if day := strings.TrimSuffix(strings.TrimPrefix(name, "helper-"), ".log"); len(day) == 8 && day < cutoff {
+			os.Remove(filepath.Join(dir, name))
+		}
+	}
+}
+
+// helperLog 统一日志汇：stdout（console 构建可见）+ 按天日志文件（GUI 构建唯一可观测来源）
 func helperLog(level, area, message string) {
-	fmt.Printf("%s [ExpertDock][%s][%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), area, level, message)
+	line := fmt.Sprintf("%s [ExpertDock][%s][%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), area, level, message)
+	fmt.Print(line)
+	logWriteMu.Lock()
+	defer logWriteMu.Unlock()
+	if dir, ok := ensureLogDir(); ok {
+		path := filepath.Join(dir, "helper-"+time.Now().Format("20060102")+".log")
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+			f.WriteString(line)
+			f.Close()
+		}
+	}
 }
