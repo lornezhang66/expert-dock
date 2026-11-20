@@ -22,7 +22,7 @@ jobs:
         run: |
           BASE="${API_BASE:-https://ed.lorne.top}"
           VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.9.6"
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.9.7"
           mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
           GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-arm64 .
           GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-amd64 .
@@ -56,7 +56,7 @@ jobs:
         shell: pwsh
         run: |
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://ed.lorne.top" }
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.9.6" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.9.7" }
           New-Item -ItemType Directory -Force dist | Out-Null
           # -H windowsgui：无控制台黑窗；desktop,production：wails 生产构建标签（缺 production 会带调试组件）
           go build -tags "desktop,production" -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
@@ -94,7 +94,7 @@ jobs:
       - name: Build Windows Setup (Inno Setup)
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.9.6" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.9.7" }
           $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
           $isccPath = if ($iscc) { $iscc.Source } else { Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe" }
           if (-not (Test-Path $isccPath)) { throw "runner 上未找到 Inno Setup：$isccPath" }

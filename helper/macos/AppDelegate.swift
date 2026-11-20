@@ -12,6 +12,7 @@ struct ExpertDockApp {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
     private var installing = false
     private var process: Process?
     private var statusItem: NSStatusItem!
@@ -58,13 +59,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let systemApplications = URL(fileURLWithPath: "/Applications", isDirectory: true)
         let destination = homeApplications.appendingPathComponent("ExpertDock Helper.app", isDirectory: true)
 
-        // 已在正式目录：清隔离属性、重注册、删旧副本。自动更新只替换 bundle，
-        // 不会修复历史遗留的 LaunchServices 记录；这三步让老用户升级后无需
-        // 手动点“修复唤起”即可自愈。
+        // 已在正式目录：清隔离属性、重注册、删旧副本，再逐条清理历史失效记录。
+        // 自动更新只替换 bundle，不会修复 LaunchServices；老用户升级后要靠这些
+        // 步骤自行恢复，不能假设点一次链接就能被系统分发到新进程。
         if current.deletingLastPathComponent() == homeApplications || current.deletingLastPathComponent() == systemApplications {
             stripQuarantine(at: current)
             registerBundle(at: current)
             removeStaleCopies(excluding: current)
+            purgeDeadRegistrationsOnce()
             return false
         }
 
@@ -113,10 +115,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 把正式路径写回 LaunchServices，覆盖旧副本和临时路径留下的记录。
     private func registerBundle(at url: URL) {
-        let tool = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        runLsregister(["-f", url.path])
+    }
+
+    /// 逐条注销已不存在路径的注册记录。
+    /// 新版 macOS 上 `lsregister -r -domain user` 是空操作（实测 0.017s 返回、
+    /// 一条记录都不清），只能从 -dump 里取死路径再逐条 -u。
+    @discardableResult
+    private func purgeDeadRegistrations(excluding keep: URL) -> Bool {
+        guard let paths = registeredAppPaths() else { return false }
+        let keepPath = keep.standardizedFileURL.path
+        for path in paths where path != keepPath {
+            guard !FileManager.default.fileExists(atPath: path) else { continue }
+            runLsregister(["-u", path])
+        }
+        return true
+    }
+
+    /// 只清一次：dump 全库约 25MB / 4 秒 CPU，每次启动都跑代价太大。
+    /// 0.9.7 起隔离属性会被清除，不会再产生新的 translocation 记录；
+    /// 需要再次清理时走窗口里的“修复唤起”。
+    private func purgeDeadRegistrationsOnce() {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ExpertDock", isDirectory: true)
+        let marker = support.appendingPathComponent(".ls-purge-v1")
+        guard !FileManager.default.fileExists(atPath: marker.path) else { return }
+        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+
+        let current = Bundle.main.bundleURL.standardizedFileURL
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self = self else { return }
+            let purged = self.purgeDeadRegistrations(excluding: current)
+            self.registerBundle(at: current)
+            // dump 失败（取不到路径）时不落标记，下次启动重试。
+            if purged { try? Data().write(to: marker) }
+        }
+    }
+
+    /// 从 lsregister -dump 提取本 app 的所有注册路径。
+    /// dump 输出约 25MB，重定向到临时文件再解析，避免 Pipe 写满导致死锁。
+    /// 返回 nil 表示 dump 失败，调用方不应落“已清理”标记。
+    private func registeredAppPaths() -> [String]? {
+        let dumpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("expertdock-ls-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: dumpURL.path, contents: nil)
+        guard let handle = try? FileHandle(forWritingTo: dumpURL) else { return nil }
+        defer { try? FileManager.default.removeItem(at: dumpURL) }
+
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: tool)
-        task.arguments = ["-f", url.path]
+        task.executableURL = URL(fileURLWithPath: Self.lsregisterPath)
+        task.arguments = ["-dump"]
+        task.standardOutput = handle
+        do {
+            try task.run()
+        } catch {
+            try? handle.close()
+            return nil
+        }
+        task.waitUntilExit()
+        try? handle.close()
+
+        guard let text = try? String(contentsOf: dumpURL, encoding: .utf8) else { return nil }
+        var paths = Set<String>()
+        for rawLine in text.split(separator: "\n") {
+            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            guard line.hasPrefix("path:") else { continue }
+            var value = String(line.dropFirst("path:".count)).trimmingCharacters(in: .whitespaces)
+            if let range = value.range(of: " (0x", options: .backwards) {
+                value = String(value[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
+            }
+            guard value.hasSuffix("/ExpertDock Helper.app") else { continue }
+            paths.insert(value)
+        }
+        return Array(paths)
+    }
+
+    private func runLsregister(_ arguments: [String]) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: Self.lsregisterPath)
+        task.arguments = arguments
         try? task.run()
         task.waitUntilExit()
     }
@@ -267,20 +344,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func repairLaunchServices() {
         let alert = NSAlert()
         alert.messageText = "修复 expertdock:// 唤起？"
-        alert.informativeText = "将重新扫描当前用户的 LaunchServices 注册信息，清除旧版本反复隔离运行留下的失效记录。通常几秒完成。"
+        alert.informativeText = "将逐条清理旧版本被隔离运行时留下的失效注册记录，并重新注册当前应用。"
         alert.addButton(withTitle: "修复")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        let tool = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-        // 新版 macOS 已移除危险的 -kill，重新扫描用户域同样能刷新失效记录。
-        let rescan = Process()
-        rescan.executableURL = URL(fileURLWithPath: tool)
-        rescan.arguments = ["-r", "-domain", "user"]
-        try? rescan.run()
-        rescan.waitUntilExit()
-        registerBundle(at: Bundle.main.bundleURL.standardizedFileURL)
-        messageLabel.stringValue = "注册表已刷新，请回到分享页重新点击安装"
+        messageLabel.stringValue = "正在清理失效记录…"
+        let current = Bundle.main.bundleURL.standardizedFileURL
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            self.purgeDeadRegistrations(excluding: current)
+            self.registerBundle(at: current)
+            DispatchQueue.main.async {
+                self.messageLabel.stringValue = "失效记录已清理并重新注册，请回到分享页重新点击安装"
+            }
+        }
     }
 
     @objc private func cleanupOldVersions() {
