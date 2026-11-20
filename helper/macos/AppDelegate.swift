@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var stateLabel: NSTextField!
     private var messageLabel: NSTextField!
+    private var statusDot: NSView!
     private var timer: Timer?
     private var pendingURL: String?
 
@@ -143,37 +144,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildWindow() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 470, height: 280), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 260),
+                          styleMask: [.titled, .closable, .fullSizeContentView],
+                          backing: .buffered, defer: false)
         window.title = "ExpertDock Helper"
-        window.center()
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.collectionBehavior = [.moveToActiveSpace]
+        // 多显示器环境下 center() 可能把窗口放到副屏甚至屏幕外，
+        // 显式放到主屏可见区域的中央。
+        if let screen = NSScreen.screens.first {
+            let visible = screen.visibleFrame
+            let size = window.frame.size
+            window.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
+                                          y: visible.midY - size.height / 2))
+        }
+
+        let versionText = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let symbol = NSImage.SymbolConfiguration(pointSize: 28, weight: .regular)
+        let icon = NSImageView()
+        icon.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "ExpertDock Helper")?
+            .withSymbolConfiguration(symbol)
+        icon.contentTintColor = .controlAccentColor
 
         let title = NSTextField(labelWithString: "ExpertDock Helper")
-        title.font = .boldSystemFont(ofSize: 24)
+        title.font = .systemFont(ofSize: 17, weight: .semibold)
+        let subtitle = NSTextField(labelWithString: "菜单栏常驻 · 版本 \(versionText)")
+        subtitle.font = .systemFont(ofSize: 12)
+        subtitle.textColor = .secondaryLabelColor
+        let titleStack = NSStackView(views: [title, subtitle])
+        titleStack.orientation = .vertical
+        titleStack.alignment = .leading
+        titleStack.spacing = 2
+
+        let header = NSStackView(views: [icon, titleStack])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 12
+
+        statusDot = NSView()
+        statusDot.wantsLayer = true
+        statusDot.layer?.cornerRadius = 5
+        statusDot.layer?.backgroundColor = NSColor.systemGreen.cgColor
+        statusDot.translatesAutoresizingMaskIntoConstraints = false
+        statusDot.widthAnchor.constraint(equalToConstant: 10).isActive = true
+        statusDot.heightAnchor.constraint(equalToConstant: 10).isActive = true
+
         stateLabel = NSTextField(labelWithString: "已就绪")
-        stateLabel.font = .boldSystemFont(ofSize: 16)
+        stateLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        let stateRow = NSStackView(views: [statusDot, stateLabel])
+        stateRow.orientation = .horizontal
+        stateRow.alignment = .centerY
+        stateRow.spacing = 8
+
         messageLabel = NSTextField(wrappingLabelWithString: "等待安装请求")
+        messageLabel.font = .systemFont(ofSize: 13)
         messageLabel.textColor = .secondaryLabelColor
-        let version = NSTextField(labelWithString: "版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")")
-        version.textColor = .secondaryLabelColor
+        messageLabel.maximumNumberOfLines = 3
+        messageLabel.preferredMaxLayoutWidth = 412
+
+        let statusStack = NSStackView(views: [stateRow, messageLabel])
+        statusStack.orientation = .vertical
+        statusStack.alignment = .leading
+        statusStack.spacing = 6
 
         let update = NSButton(title: "检查更新", target: self, action: #selector(checkUpdates))
+        update.bezelStyle = .rounded
+        update.keyEquivalent = "\r"
         let repair = NSButton(title: "修复唤起", target: self, action: #selector(repairLaunchServices))
+        repair.bezelStyle = .rounded
         let cleanup = NSButton(title: "清理旧版本", target: self, action: #selector(cleanupOldVersions))
+        cleanup.bezelStyle = .rounded
         let quit = NSButton(title: "退出", target: self, action: #selector(quitApp))
-        let buttons = NSStackView(views: [update, repair, cleanup, quit])
-        buttons.orientation = .horizontal
-        buttons.spacing = 10
+        quit.bezelStyle = .inline
 
-        let stack = NSStackView(views: [title, stateLabel, messageLabel, version, buttons])
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+        spacer.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+        let buttons = NSStackView(views: [update, repair, cleanup, spacer, quit])
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 8
+
+        let separator = NSBox()
+        separator.boxType = .separator
+
+        // 让按钮固定在窗口底部，窗口高度变化时只拉伸中间留白。
+        let bodySpacer = NSView()
+        bodySpacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .vertical)
+        bodySpacer.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .vertical)
+
+        let stack = NSStackView(views: [header, separator, statusStack, bodySpacer, buttons])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 14
+        stack.spacing = 18
         stack.translatesAutoresizingMaskIntoConstraints = false
         window.contentView?.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 30),
-            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -30),
-            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 30),
+            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -24),
+            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 48),
+            stack.bottomAnchor.constraint(equalTo: window.contentView!.bottomAnchor, constant: -24),
+            separator.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            buttons.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
     }
 
@@ -247,9 +321,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let data = try? Data(contentsOf: statusURL()),
               let status = try? JSONSerialization.jsonObject(with: data) as? [String: String] else { return }
         switch status["state"] {
-        case "installing": stateLabel.stringValue = "正在安装"
-        case "failed": stateLabel.stringValue = "最近安装失败"
-        default: stateLabel.stringValue = "已就绪"
+        case "installing":
+            stateLabel.stringValue = "正在安装"
+            statusDot?.layer?.backgroundColor = NSColor.systemBlue.cgColor
+        case "failed":
+            stateLabel.stringValue = "最近安装失败"
+            statusDot?.layer?.backgroundColor = NSColor.systemRed.cgColor
+        default:
+            stateLabel.stringValue = "已就绪"
+            statusDot?.layer?.backgroundColor = NSColor.systemGreen.cgColor
         }
         messageLabel.stringValue = status["message"]?.isEmpty == false ? status["message"]! : "等待安装请求"
     }
