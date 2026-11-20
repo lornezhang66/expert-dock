@@ -21,7 +21,7 @@ import (
 
 var (
 	apiBase       = "https://ed.lorne.top"
-	helperVersion = "0.2.5"
+	helperVersion = "0.2.6"
 )
 
 const (
