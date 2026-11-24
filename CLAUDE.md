@@ -61,6 +61,7 @@ powershell build/build-release.ps1 -Version X.Y.Z -MacosZipPath <CI mac zip> -Pu
 3. **线上回读校验带随机 nonce**——下载响应 max-age=3600 immutable，同版本重发有缓存窗口
 4. **更新 ZIP 六件套**：exe + shim(helper-ui.ps1) + ico + install.cmd + helper-env.ps1 + node zip——v0.7.x 旧更新器强制校验四件套，缺任一将永久卡旧版；shim 头 20 行必须含 vX.Y.Z（包内防降级检查）
 5. macOS zip 先传、latest.json 最后
+6. **deploy 前双核对（2026-11-24 双线分叉事故教训）**：先 `git fetch` 确认 origin/main 无未合并改动（双线曾分叉 4 天互不知情，一次 deploy 把线上 HELPER_VERSION 打回旧值致下载全 404）；再核对本地 `wrangler.jsonc` 的 HELPER_VERSION 与线上 `/api/helper/latest/macos` 返回的 version 一致——R2 保留策略只留 2 版，旧版本声明指向的包可能已被 GC
 
 ## 版本号五处对齐（每次发版）
 
@@ -71,6 +72,7 @@ powershell build/build-release.ps1 -Version X.Y.Z -MacosZipPath <CI mac zip> -Pu
 - **专家包**：同名专家上传自动合并为版本（不再新建条目）；每专家保留最新 3 版，超限版本的 R2 对象/分享/版本行在上传时自动清除（sweepExpertRetention）
 - **helper 发布物**：每版约 90MB，仅保留最近 2 版；客户端每次更新检查（/api/helper/latest）触发 waitUntil 自愈清扫（sweepHelperReleases）
 - **手动全量 GC**：管理员会话下 POST /api/admin/gc（保留 3 版专家 + 2 版 helper）
+- **流水线删除接口**（2026-11-19）：`DELETE /api/pipeline/expert-versions?name=<plugin名>&version=<版本>`，头 `Authorization: Bearer <PIPELINE_TOKEN>`（`wrangler secret put PIPELINE_TOKEN`，本地 .dev.vars）。幂等（查无目标仍 200）：删 R2 对象→shares→版本行，专家删空连 experts 行。用途：发布流水线上传成功但后续步骤失败后，重试前先调它，规避 expert_versions 的 UNIQUE(expert_id, version) 同版本重传 500
 - 历史包袱：git 历史含 0.8.0 时代 staging 二进制约 180MB（filter-repo 评估后放弃）
 
 ## 高频踩坑（已付过学费，勿重蹈）
