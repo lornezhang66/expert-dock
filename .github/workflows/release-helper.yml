@@ -39,6 +39,17 @@ jobs:
           CORE_VERSION=$("dist/ExpertDock Helper.app/Contents/Resources/expertdock-core" --version)
           test "$CORE_VERSION" = "$VERSION"
           otool -l "dist/ExpertDock Helper.app/Contents/Resources/expertdock-core" | grep -q LC_UUID
+          # launcher 启动冒烟：此前 CI 只验证 core --version，Swift launcher 从未被启动——
+          # 启动即崩（dyld/Info.plist 问题）与"未安装"用户症状完全相同，绿灯无法排除。
+          open "dist/ExpertDock Helper.app"
+          sleep 5
+          pgrep -x ExpertDockHelper || { echo "launcher 未存活（启动即崩）"; exit 1; }
+          # scheme 分发冒烟：无注册处理者时 open 退出非零直接失败；ping 前缀被
+          # handleURL 的 expertdock://install? guard 静默忽略，不会触发安装/弹窗
+          open "expertdock://ping"
+          sleep 2
+          pgrep -x ExpertDockHelper || { echo "scheme 分发后进程消失"; exit 1; }
+          pkill -x ExpertDockHelper || true
           cd dist && ditto -c -k --keepParent "ExpertDock Helper.app" expertdock-helper-macos.zip
       - uses: actions/upload-artifact@v4
         with:

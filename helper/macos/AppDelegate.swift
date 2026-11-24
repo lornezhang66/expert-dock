@@ -73,6 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             launcher.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             launcher.arguments = ["-a", destination.path] + (pendingURL.map { [$0] } ?? [])
             try launcher.run()
+            // 源副本立即回收进废纸篓：同 bundle id 多副本并存时，LaunchServices 可能把
+            // expertdock:// 持续分发到将被清理的下载路径，路径失效后点击链接毫无反应。
+            // 运行中 bundle 可安全改名（POSIX rename，进程镜像已加载）；recycle 异步执行，
+            // 不受本进程 terminate 影响。失败（如只读卷）仅忽略——~/Applications 的正式
+            // 副本在上方迁移步骤已确保就位，此处不产生"无 app 可用"状态。
+            NSWorkspace.shared.recycle([current], completionHandler: { _, _ in })
             NSApplication.shared.terminate(nil)
             return true
         } catch {
