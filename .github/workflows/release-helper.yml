@@ -22,7 +22,8 @@ jobs:
         run: |
           BASE="${API_BASE:-https://ed.lorne.top}"
           VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.8.0"
+          # workflow_dispatch 无 tag 构建的兜底版本：对齐当前线上 HELPER_VERSION，tag 构建时被注入值覆盖
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.9.7"
           mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
           GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-arm64 .
           GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-amd64 .
@@ -67,7 +68,7 @@ jobs:
         shell: pwsh
         run: |
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://ed.lorne.top" }
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.8.0" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.9.7" }
           New-Item -ItemType Directory -Force dist | Out-Null
           # -H windowsgui：无控制台黑窗；desktop,production：wails 生产构建标签（缺 production 会带调试组件）
           go build -tags "desktop,production" -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
