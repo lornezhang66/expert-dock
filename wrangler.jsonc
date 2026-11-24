@@ -9,7 +9,7 @@
   ],
   "vars": {
     "MAX_UPLOAD_BYTES": "20971520",
-    "HELPER_VERSION": "0.9.5"
+    "HELPER_VERSION": "0.9.7"
   },
   "d1_databases": [
     {
