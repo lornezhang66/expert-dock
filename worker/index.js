@@ -7226,6 +7226,9 @@ async function route(request, env, ctx) {
   if (method === "GET" && match) return helperMetadata(match[1], url.origin, env);
   match = path.match(/^\/api\/helper\/latest\/(macos|windows)$/);
   if (method === "GET" && match) return helperLatest(match[1], url.origin, env, ctx);
+  // 流水线专用：token 鉴权（无浏览器会话），必须挂在下面的会话门禁之前
+  match = path.match(/^\/api\/pipeline\/expert-versions$/);
+  if (match) return pipelineExpertVersions(request, env);
   match = path.match(/^\/api\/shares\/([A-Za-z0-9_-]+)\/download$/);
   if (method === "GET" && match) return downloadPackage(match[1], env);
   match = path.match(/^\/api\/shares\/([A-Za-z0-9_-]+)\/install-click$/);
@@ -7686,7 +7689,7 @@ async function dashboard(env) {
 __name(dashboard, "dashboard");
 function helperPage(env) {
   const version = escapeHtml(env.HELPER_VERSION || "0.1.0");
-  return page("下载 Helper", `<section class="card hero-card"><p class="eyebrow">One-time Setup</p><h1>安装 Helper</h1><p class="muted" style="font-size:18px">装一次就够，以后点「安装」它全包。</p><div class="row" style="margin:24px 0 0"><a class="btn btn-primary" href="/downloads/helper/macos">下载 macOS 版</a><a class="btn" href="/downloads/helper/windows/setup">下载 Windows 安装程序</a></div><p class="meta" style="margin-top:14px">版本 ${version} · 官方直供</p></section><section class="card"><p class="eyebrow">Installation</p><h2 style="margin-bottom:18px">两步完成</h2><div class="trust-grid" style="margin-top:0"><article class="trust-card"><div class="trust-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><div><h3>macOS</h3><p>解压后打开，自动装进「应用程序」并常驻菜单栏。若提示“无法验证开发者”：系统设置 → 隐私与安全性 → 底部点「仍要打开」（macOS 15 起右键打开已无效）。旧版本可在 Helper 页清理。</p></div></article><article class="trust-card"><div class="trust-icon" style="background:#ecfaf4;color:#17aa75;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><h3>Windows</h3><p>下载后双击 <span class="code">ExpertDock-Helper-Setup-${version}.exe</span>，按进度提示完成安装。</p></div></article></div><p style="margin:18px 0 0"><a href="javascript:history.back()">← 返回</a></p></section>`);
+  return page("下载 Helper", `<section class="card hero-card"><p class="eyebrow">One-time Setup</p><h1>安装 Helper</h1><p class="muted" style="font-size:18px">装一次就够，以后点「安装」它全包。</p><div class="row" style="margin:24px 0 0"><a class="btn btn-primary" href="/downloads/helper/macos">下载 macOS 版</a><a class="btn" href="/downloads/helper/windows/setup">下载 Windows 安装程序</a></div><p class="meta" style="margin-top:14px">版本 ${version} · 官方直供</p></section><section class="card"><p class="eyebrow">Installation</p><h2 style="margin-bottom:18px">两步完成</h2><div class="trust-grid" style="margin-top:0"><article class="trust-card"><div class="trust-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 21h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><div><h3>macOS</h3><p>解压后打开，自动装进「应用程序」并常驻菜单栏。若提示“无法验证开发者”：系统设置 → 隐私与安全性 → 底部点「仍要打开」（macOS 15 起右键打开已无效）。安装后请保持 Helper 常驻，再点分享页的安装按钮。旧版本可在 Helper 页清理。<br><strong>点安装没反应？</strong>先完全退出 Helper（菜单栏 ED → 退出）重开再试；仍无效时打开 Helper 窗口点「修复唤起」，或终端执行 <span class="code">xattr -dr com.apple.quarantine ~/Applications/"ExpertDock Helper.app"</span> 后重启 Helper。</p></div></article><article class="trust-card"><div class="trust-icon" style="background:#ecfaf4;color:#17aa75;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><h3>Windows</h3><p>下载后双击 <span class="code">ExpertDock-Helper-Setup-${version}.exe</span>，按进度提示完成安装。</p></div></article></div><p style="margin:18px 0 0"><a href="javascript:history.back()">← 返回</a></p></section>`);
 }
 __name(helperPage, "helperPage");
 async function downloadHelper(platform, env) {
@@ -7800,6 +7803,58 @@ async function gcEndpoint(request, env) {
   return json({ ok: true, keepExpertVersions: 3, keepHelperReleases: 2, ...result });
 }
 __name(gcEndpoint, "gcEndpoint");
+// ---- 流水线清理接口：发布流水线上传 ZIP 成功但后续步骤（npm/GitLab Release）失败时，
+// 同 name+version 重传会撞 expert_versions 的 UNIQUE(expert_id, version) 约束（500，
+// "版本号已存在"）。本接口按 name+version 幂等清理，流水线重试前可无条件调用。 ----
+async function verifyPipelineToken(request, env) {
+  if (!env.PIPELINE_TOKEN) return false;
+  const m = (request.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
+  return !!m && secureEqual(m[1].trim(), env.PIPELINE_TOKEN);
+}
+__name(verifyPipelineToken, "verifyPipelineToken");
+async function pipelineExpertVersions(request, env) {
+  // 鉴权前置：不给未授权探测暴露方法/参数级错误差异
+  if (!env.PIPELINE_TOKEN) return json({ error: "服务端未配置 PIPELINE_TOKEN" }, 503);
+  if (!await verifyPipelineToken(request, env)) return json({ error: "unauthorized" }, 401);
+  if (request.method !== "DELETE") return json({ error: "只支持 DELETE" }, 405, { allow: "DELETE" });
+  const url = new URL(request.url);
+  const name = (url.searchParams.get("name") || "").trim();
+  const version = (url.searchParams.get("version") || "").trim();
+  if (!name || !version) return json({ error: "name 与 version 必填" }, 400);
+  try {
+    const result = await deleteExpertVersionsByName(env, name, version);
+    return json({ ok: true, name, version, ...result });
+  } catch (error) {
+    return json({ error: `删除失败：${error.message || error}` }, 500);
+  }
+}
+__name(pipelineExpertVersions, "pipelineExpertVersions");
+// 顺序不可换：先删 R2 后删 DB。R2 删成功、DB 失败时可安全整接口重试（R2 delete 不存在的
+// key 不报错）；反过来会留下无版本行引用的孤儿对象，保留策略清扫都够不到它。
+async function deleteExpertVersionsByName(env, name, version) {
+  const expert = await env.DB.prepare("SELECT id FROM experts WHERE name=?").bind(name).first();
+  if (!expert) return { removedVersions: 0, removedShares: 0, expertRemoved: false };
+  const { results: targets } = await env.DB.prepare("SELECT id, package_key FROM expert_versions WHERE expert_id=? AND version=?").bind(expert.id, version).all();
+  if (!targets.length) return { removedVersions: 0, removedShares: 0, expertRemoved: false };
+  for (const t of targets) if (t.package_key) await env.PACKAGES.delete(t.package_key);
+  const placeholders = targets.map(() => "?").join(",");
+  const { results: shareRows } = await env.DB.prepare(`SELECT id FROM shares WHERE expert_version_id IN (${placeholders})`).bind(...targets.map((t) => t.id)).all();
+  const { results: remainRows } = await env.DB.prepare("SELECT id FROM expert_versions WHERE expert_id=?").bind(expert.id).all();
+  // 外键开启（PRAGMA foreign_keys=ON）：shares 先删，版本行后删；专家删空连 experts 行一起清，
+  // 下次上传按新条目重建，重试恢复不留半元数据
+  const statements = [
+    ...shareRows.map((s) => env.DB.prepare("DELETE FROM shares WHERE id=?").bind(s.id)),
+    ...targets.map((t) => env.DB.prepare("DELETE FROM expert_versions WHERE id=?").bind(t.id)),
+  ];
+  let expertRemoved = false;
+  if (remainRows.length === targets.length) {
+    statements.push(env.DB.prepare("DELETE FROM experts WHERE id=?").bind(expert.id));
+    expertRemoved = true;
+  }
+  await env.DB.batch(statements);
+  return { removedVersions: targets.length, removedShares: shareRows.length, expertRemoved };
+}
+__name(deleteExpertVersionsByName, "deleteExpertVersionsByName");
 async function createExpert(request, env) {
   checkOrigin(request);
   const upload = await readUpload(request, env);
