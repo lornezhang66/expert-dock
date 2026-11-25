@@ -1,2 +1,4 @@
 ADMIN_PASSWORD=change-me
 SESSION_SECRET=replace-with-at-least-32-random-characters
+# 流水线删除接口（DELETE /api/pipeline/expert-versions）的 Bearer token；线上用 wrangler secret put 配置
+PIPELINE_TOKEN=replace-with-at-least-32-random-characters
