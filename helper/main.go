@@ -1198,13 +1198,27 @@ func registerProtocol() error {
 	return nil
 }
 
-// writeStatus 双路状态：status.json（launcher/外部读取契约不变）+ GUI 状态窗钩子（Windows）
-func writeStatus(state, message string) {
+// statusJSONPath 状态文件唯一路径源：配置目录走 os.UserConfigDir()（Windows %AppData% /
+// macOS ~/Library/Application Support / Linux $XDG_CONFIG_HOME 或 ~/.config）。
+// 写侧（Go core）与读侧（mac launcher AppDelegate.swift 的 applicationSupportDirectory）
+// 靠同一契约对齐——0.9.x 曾写死相对路径，安装版 GUI 读到的 status.json 一直是旧格式。
+func statusJSONPath() (string, error) {
 	dir, err := os.UserConfigDir()
-	if err == nil {
-		_ = writeJSONAtomic(filepath.Join(dir, "ExpertDock", "status.json"), map[string]string{
-			"state": state, "message": message, "version": helperVersion, "updatedAt": time.Now().UTC().Format(time.RFC3339),
-		})
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "ExpertDock", "status.json"), nil
+}
+
+// writeStatus 双路状态：status.json（launcher/外部读取契约不变）+ GUI 状态窗钩子（Windows）。
+// UserConfigDir 失败（HOME/AppData 未设等极端环境）只降级为跳过落盘并记 WARN，不阻断 GUI 钩子。
+func writeStatus(state, message string) {
+	if path, err := statusJSONPath(); err != nil {
+		helperLog("WARN", "状态", "status.json 落盘跳过（无用户配置目录）："+err.Error())
+	} else if writeErr := writeJSONAtomic(path, map[string]string{
+		"state": state, "message": message, "version": helperVersion, "updatedAt": time.Now().UTC().Format(time.RFC3339),
+	}); writeErr != nil {
+		helperLog("WARN", "状态", "status.json 写入失败："+writeErr.Error())
 	}
 	if uiStatusHook != nil {
 		uiStatusHook(state, message)
