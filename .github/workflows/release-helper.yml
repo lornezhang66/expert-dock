@@ -22,8 +22,10 @@ jobs:
         run: |
           BASE="${API_BASE:-https://ed.lorne.top}"
           VERSION="${GITHUB_REF_NAME#v}"
-          # workflow_dispatch 无 tag 构建的兜底版本：对齐当前线上 HELPER_VERSION，tag 构建时被注入值覆盖
-          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="0.9.7"
+          # workflow_dispatch 无 tag 构建的兜底版本：统一取 wrangler.jsonc 的 HELPER_VERSION
+          # （与线上 Worker 声明单一来源，三 job 同值；tag 构建时被 GITHUB_REF_NAME 注入值覆盖）
+          [[ "$GITHUB_REF_NAME" == v* ]] || VERSION="$(sed -n 's/.*"HELPER_VERSION"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ../wrangler.jsonc | head -n1)"
+          [[ -n "$VERSION" ]] || { echo "无法从 wrangler.jsonc 解析 HELPER_VERSION"; exit 1; }
           mkdir -p "dist/ExpertDock Helper.app/Contents/MacOS" "dist/ExpertDock Helper.app/Contents/Resources"
           GOOS=darwin GOARCH=arm64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-arm64 .
           GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.apiBase=$BASE -X main.helperVersion=$VERSION" -o dist/core-amd64 .
@@ -68,7 +70,10 @@ jobs:
         shell: pwsh
         run: |
           $base = if ($env:API_BASE) { $env:API_BASE } else { "https://ed.lorne.top" }
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.9.7" }
+          # dispatch 兜底版本与 macos/installer job 同源：wrangler.jsonc 的 HELPER_VERSION
+          $fallback = [regex]::Match((Get-Content ../wrangler.jsonc -Raw), '"HELPER_VERSION"\s*:\s*"([^"]+)"').Groups[1].Value
+          if (-not $fallback) { throw "无法从 wrangler.jsonc 解析 HELPER_VERSION" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { $fallback }
           New-Item -ItemType Directory -Force dist | Out-Null
           # -H windowsgui：无控制台黑窗；desktop,production：wails 生产构建标签（缺 production 会带调试组件）
           go build -tags "desktop,production" -ldflags "-H windowsgui -s -w -X main.apiBase=$base -X main.helperVersion=$version" -o dist/expertdock-helper.exe .
@@ -106,7 +111,10 @@ jobs:
       - name: Build Windows Setup (Inno Setup)
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { "0.8.0" }
+          # dispatch 兜底版本与 macos/windows helper job 同源：wrangler.jsonc 的 HELPER_VERSION
+          $fallback = [regex]::Match((Get-Content wrangler.jsonc -Raw), '"HELPER_VERSION"\s*:\s*"([^"]+)"').Groups[1].Value
+          if (-not $fallback) { throw "无法从 wrangler.jsonc 解析 HELPER_VERSION" }
+          $version = if ($env:GITHUB_REF_NAME -like "v*") { $env:GITHUB_REF_NAME.Substring(1) } else { $fallback }
           $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
           $isccPath = if ($iscc) { $iscc.Source } else { Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe" }
           if (-not (Test-Path $isccPath)) { throw "runner 上未找到 Inno Setup：$isccPath" }
