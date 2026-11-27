@@ -1,6 +1,6 @@
 # CLAUDE.md — 专家云盘（ExpertDock）
 
-> 面向 AI 会话的项目事实源。基线版本 **v0.9.1**（2026-11-13 起）。历史细节见 `docs/ARCHITECTURE.md`（有历史标记头）与跨项目记忆库 `facts/projects/ExpertDock.md`。
+> 面向 AI 会话的项目事实源。基线版本 **v0.9.8**（2026-11-26 起）。历史细节见 `docs/ARCHITECTURE.md`（有历史标记头）与跨项目记忆库 `facts/projects/ExpertDock.md`。
 
 ## 产品是什么
 
@@ -62,10 +62,11 @@ powershell build/build-release.ps1 -Version X.Y.Z -MacosZipPath <CI mac zip> -Pu
 4. **更新 ZIP 六件套**：exe + shim(helper-ui.ps1) + ico + install.cmd + helper-env.ps1 + node zip——v0.7.x 旧更新器强制校验四件套，缺任一将永久卡旧版；shim 头 20 行必须含 vX.Y.Z（包内防降级检查）
 5. macOS zip 先传、latest.json 最后
 6. **deploy 前双核对（2026-11-24 双线分叉事故教训）**：先 `git fetch` 确认 origin/main 无未合并改动（双线曾分叉 4 天互不知情，一次 deploy 把线上 HELPER_VERSION 打回旧值致下载全 404）；再核对本地 `wrangler.jsonc` 的 HELPER_VERSION 与线上 `/api/helper/latest/macos` 返回的 version 一致——R2 保留策略只留 2 版，旧版本声明指向的包可能已被 GC
+7. **动线上前（`-Publish -DeployWorker`）把三个发布物的哈希与版本核对结果发老板确认一次**（2026-11-27 起）；CI 出包 → 取回 → 本机汇总发布为既定口径，staging 在 `build/release/vX.Y.Z/`，CI mac zip 经 `-MacosZipPath` 传入
 
-## 版本号五处对齐（每次发版）
+## 版本号六处对齐（每次发版；v0.9.8 起从五处扩为六处）
 
-`helper/main.go` helperVersion / `wrangler.jsonc` HELPER_VERSION / `build/legacy-shim.ps1` 头部 v 标记 / `helper/winres/winres.json`（改后必须 `go-winres make` 重生成 syso）/ git tag 名
+`helper/main.go` helperVersion / `wrangler.jsonc` HELPER_VERSION / `build/legacy-shim.ps1` 头部 v 标记 / `helper/winres/winres.json`（改后必须 `go-winres make` 重生成两个 syso 并一并提交）/ `helper/Info.plist` CFBundleShortVersionString（CI 构建时 PlistBuddy 会以 tag 注入值覆盖，仓库内值是本地裸构建的兜底显示，勿滞后）/ git tag 名。`wrangler.jsonc` 的 HELPER_VERSION 同时是 release-helper.yml 三个 job 手动 dispatch 兜底的唯一来源（v0.9.8 起），勿在 workflow 里写死版本号
 
 ## R2 保留策略（自动治理，2026-11-16 起）
 
@@ -77,6 +78,7 @@ powershell build/build-release.ps1 -Version X.Y.Z -MacosZipPath <CI mac zip> -Pu
 
 ## 高频踩坑（已付过学费，勿重蹈）
 
+- **双轨产物字节差异（v0.9.8 实测）**：GitHub release 资产是 CI 原件（Compress-Archive 打包 + CI 的 Inno 6），R2 包是本机 build-release.ps1 产物（ZipArchive + 本机 Inno 7），两个 Windows 文件字节不同属预期——更新 zip 包内六件逐文件哈希一致，macOS zip 完全一致；latest.json 由本机三包同源自产，不会失配。校验线上用线上回读（nonce 下载比哈希），勿拿 GitHub digest 比 R2 包
 - **PS5.1**：跑 build/测试脚本前先重置 `PSModulePath`（否则 Get-FileHash 不可见）；`-File` 脚本里 `& gui-exe --version` 管道捕获返回空，用 `System.Diagnostics.Process` 重定向
 - **wails**：生产构建必须 `-tags "desktop,production"`；v2 无 SystemTray（systray 独立线程补位）；标题栏图标取 RT_GROUP_ICON **#3**；go-winres 配置各段必须包语言层（RT_VERSION "0000"、RT_MANIFEST "0409"）；多帧 ICO 需抽 PNG 帧喂给 go-winres
 - **GUI 测试**：多实例前先清场进程（单实例锁静默重试 8s）；windowsgui 构建的日志不可见，调试用 console 版；截图被遮挡用 `PrintWindow + PW_RENDERFULLCONTENT`
